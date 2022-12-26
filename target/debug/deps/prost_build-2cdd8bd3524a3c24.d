@@ -1,0 +1,16 @@
+/Users/ttsuto/Desktop/github/distrib-blog-svc/target/debug/deps/prost_build-2cdd8bd3524a3c24.rmeta: /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/lib.rs /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/ast.rs /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/code_generator.rs /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/extern_paths.rs /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/ident.rs /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/message_graph.rs /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/path.rs
+
+/Users/ttsuto/Desktop/github/distrib-blog-svc/target/debug/deps/libprost_build-2cdd8bd3524a3c24.rlib: /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/lib.rs /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/ast.rs /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/code_generator.rs /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/extern_paths.rs /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/ident.rs /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/message_graph.rs /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/path.rs
+
+/Users/ttsuto/Desktop/github/distrib-blog-svc/target/debug/deps/prost_build-2cdd8bd3524a3c24.d: /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/lib.rs /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/ast.rs /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/code_generator.rs /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/extern_paths.rs /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/ident.rs /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/message_graph.rs /Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/path.rs
+
+/Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/lib.rs:
+/Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/ast.rs:
+/Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/code_generator.rs:
+/Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/extern_paths.rs:
+/Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/ident.rs:
+/Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/message_graph.rs:
+/Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/src/path.rs:
+
+# env-dep:PROTOC=/Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/third-party/protobuf/protoc-osx-aarch64
+# env-dep:PROTOC_INCLUDE=/Users/ttsuto/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.9.0/third-party/protobuf/include
