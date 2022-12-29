@@ -3,18 +3,10 @@ use tonic;
 
 use tribbler::rpc::trib_storage_server::TribStorage;
 use tribbler::rpc::{Key, Value, KeyValue, Bool, Pattern, StringList}
-use tribbler::storage::Storage;
+use tribbler::storage::{Storage, List};
 
 pub struct StorageServer {
-    kvstore: Box<dyn Storage>,
-}
-
-impl StorageServer {
-    pub fn new(storage: Box<dyn Storage>) -> StorageServer {
-        StorageServer {
-            kvstore: storage,
-        }
-    }
+    pub(crate) storage: Box<dyn Storage>,
 }
 
 #[async_trait]
@@ -23,87 +15,163 @@ impl TribStorage for StorageServer {
         &self,
         request: tonic::Request<Key>,
     ) -> Result<tonic::Response<Value>, tonic::Status> {
-        let result = match self
-            .kvstore
+        match self
+            .storage
             .get(request.into_inner().key)
             .await
         {
-            Ok(value) => value,
-            Err(error) => return tonic::Status::new(
-                tonic::Code::Unknown,
+            Ok(Some(value)) => Ok(tonic::Response::new(
+                Value {
+                    value: value,
+                }
+            )),
+            Ok(None) => Ok(tonic::Response::new(
+                Value {
+                    value: String::from(""),
+                }
+            )),
+            Err(error) => tonic::Status::unknown(
                 format!("Error: {}}", error),
             ),
         }
-        let response = match result {
-            Some(value) => Value {
-                value: value
-            },
-            None => Value {
-                value: String::from("")
-            },
-        }
-        Ok(tonic::Response::new(respones))
     }
 
     async fn set(
         &self,
         request: tonic::Request<KeyValue>,
     ) -> Result<tonic::Response<Bool>, tonic::Status> {
-        let result = match self
-            .kvstore
+        match self
+            .storage
             .set(&request.into_inner())
             .await
         {
-            Ok(value) => value,
-            Err(error) => return tonic::Status::new(
-                tonic::Code::Unknown,
-                format!("Error: {}", error)
+            Ok(value) => Ok(tonic::Response::new(
+                Bool {
+                    value: value,
+                }
+            )),
+            Err(error) => tonic::Status::unknown(
+                format!("Error: {}}", error),
             ),
         }
-        Ok(tonic::Response::new(Bool {
-            value: result,
-        }))
     }
 
     async fn keys(
         &self,
         request: tonic::Request<Pattern>,
     ) -> Result<tonic::Response<StringList>, tonic::Status> {
-        todo!()
+        match self
+            .storage
+            .keys(&request.into_inner())
+            .await
+        {
+            Ok(List(list)) => Ok(tonic::Response::new(
+                StringList {
+                    list: list, 
+                }
+            )),
+            Err(error) => tonic::Status::unknown(
+                format!("Error: {}}", error),
+            ),
+        }
     }
 
     async fn list_get(
         &self,
         request: tonic::Request<Key>,
     ) -> Result<tonic::Response<StringList>, tonic::Status> {
-        todo!()
+        match self
+            .storage
+            .list_get(&request.into_inner().key)
+            .await
+        {
+            Ok(List(list)) => Ok(tonic::Response::new(
+                StringList {
+                    list: list,
+                }
+            )),
+            Err(error) => tonic::Status::unknown(
+                format!("Error: {}}", error),
+            ),
+        };
     }
 
     async fn list_append(
         &self,
         request: tonic::Request<KeyValue>,
     ) -> Result<tonic::Response<Bool>, tonic::Status> {
-        todo!()
+        match self
+            .storage
+            .list_append(&request.into_inner())
+            .await
+        {
+            Ok(value) => Ok(tonic::Response::new(
+                Bool {
+                    value: value,
+            })),
+            Err(error) => tonic::Status::unknown(
+                format!("Error: {}}", error),
+            ),
+        }
     }
 
     async fn list_remove(
         &self,
         request: tonic::Request<KeyValue>,
     ) -> Result<tonic::Response<ListRemoveResponse>, tonic::Status> {
-        todo!()
+        match self
+            .storage
+            .list_remove(&request.into_inner())
+            .await
+        {
+            Ok(value) => Ok(tonic::Response::new(
+                ListRemoveResponse {
+                    removed: value,
+                }
+            )),
+            Err(error) => tonic::Status::unknown(
+                format!("Error: {}}", error),
+            ),
+        }
     }
 
     async fn list_keys(
         &self,
         request: tonic::Request<Pattern>,
     ) -> Result<tonic::Response<StringList>, tonic::Status> {
-        todo!()
+        match self
+            .storage
+            .list_keys(&request.into_inner())
+            .await
+        {
+            Ok(List(list)) => Ok(tonic::Response::new(
+                StringList {
+                    list: list,
+                }
+            )),
+            Err(error) => tonic::Status::unknown(
+                format!("Error: {}}", error),
+            ),
+        }
     }
 
     async fn clock(
         &self,
         request: tonic::Request<Clock>,
     ) -> Result<tonic::Response<Clock>, tonic::Status> {
-        todo!()
+        match self
+            .storage
+            .clock(&request.into_inner().timestamp)
+            .await
+        {
+            Ok(value) => Ok(tonic::Response::new(
+                Clock {
+                    timestamp: value,
+                }
+            )),
+            Err(error) => tonic::Status::unknown(
+                format!("Error: {}}", error),
+            ),
+        }
     }
 }

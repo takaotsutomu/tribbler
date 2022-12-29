@@ -3,9 +3,9 @@ use async_trait::async_trait;
 use tokio::sync::Mutex;
 use tonic::transport::Channel;
 
-use tribbler::storage::{KeyString, KeyList, Storage, List};
+use tribbler::storage::{KeyString, KeyList, Storage, KeyValue, Pattern, List};
 use tribbler::rpc::trib_storage_client::TribStorageClient;
-use tribbler::rpc::{Key, KeyValue, Pattern, Clock}
+use tribbler::rpc::{Key, KeyValue as RpcKeyValue, Pattern as RpcPattern, Clock}
 
 pub struct StorageClient {
     pub(crate) addr: String,
@@ -29,7 +29,7 @@ impl KeyString for StorageClient {
             .await?;
         let value = response
             .into_inner()
-            .value
+            .value;
         if value.chars().count() == 0 {
             Ok(None)
         } else {
@@ -37,7 +37,7 @@ impl KeyString for StorageClient {
         }
     }
 
-    async fn set(&self, kv: %KeyValue) -> TribResult<bool> {
+    async fn set(&self, kv: &KeyValue) -> TribResult<bool> {
         let client = Arc::clone(&self.client)
         let mut cl_inner = client.lock().await;
         if cl_inner.is_none() {
@@ -48,7 +48,7 @@ impl KeyString for StorageClient {
         let response = cl_inner
             .as_mut()
             .unwrap()
-            .set(KeyValue {
+            .set(RpcKeyValue {
                 key: kv.key.to_string(),
                 value: kv.value.to_string(),
             })
@@ -67,9 +67,9 @@ impl KeyString for StorageClient {
         let response = cl_inner
             .as_mut()
             .unwrap()
-            .keys(Pattern {
+            .keys(RpcPattern {
                 prefix: p.prefix.to_string(),
-                : p.suffix.to_string(),
+                suffix: p.suffix.to_string(),
             })
             .await?;
         Ok(List(response.into_inner().list))
@@ -107,7 +107,7 @@ impl KeyList for StorageClient {
         let response = cl_inner
             .as_mut()
             .unwrap()
-            .list_append(KeyValue {
+            .list_append(RpcKeyValue {
                 key: key.key.to_string(),
                 value: kv.value.to_string(),
             })
@@ -126,7 +126,7 @@ impl KeyList for StorageClient {
         let response = cl_inner
             .as_mut()
             .unwrap()
-            .list_remove(KeyValue {
+            .list_remove(RpcKeyValue {
                 key: key.key.to_string(),
                 value: kv.value.to_string(),
             })
@@ -145,7 +145,7 @@ impl KeyList for StorageClient {
         let response = cl_inner
             .as_mut()
             .unwrap()
-            .list_keys(Pattern {
+            .list_keys(RpcPattern {
                 prefix: p.prefix.to_string(),
                 suffix: p.suffix.to_string(),
             })
