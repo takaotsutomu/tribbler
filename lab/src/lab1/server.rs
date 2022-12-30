@@ -1,8 +1,15 @@
 use async_trait::async_trait;
 use tonic;
 
-use tribbler::rpc::trib_storage_server::TribStorage;
-use tribbler::rpc::{Key, Value, KeyValue, Bool, Pattern, StringList}
+use tribbler::rpc::{
+    trib_storage_server::TribStorage,
+    Key,
+    Value,
+    KeyValue,
+    Bool,
+    Pattern,
+    StringList,
+};
 use tribbler::storage::{Storage, List};
 
 pub struct StorageServer {

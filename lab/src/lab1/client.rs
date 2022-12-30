@@ -3,9 +3,21 @@ use async_trait::async_trait;
 use tokio::sync::Mutex;
 use tonic::transport::Channel;
 
-use tribbler::storage::{KeyString, KeyList, Storage, KeyValue, Pattern, List};
-use tribbler::rpc::trib_storage_client::TribStorageClient;
-use tribbler::rpc::{Key, KeyValue as RpcKeyValue, Pattern as RpcPattern, Clock}
+use tribbler::storage::{
+    KeyString, 
+    KeyList, 
+    Storage, 
+    KeyValue, 
+    Pattern, 
+    List
+};
+use tribbler::rpc::{
+    trib_storage_client::TribStorageClient,
+    Key, 
+    KeyValue as RpcKeyValue,
+    Pattern as RpcPattern,
+    Clock,
+};
 
 pub struct StorageClient {
     pub(crate) addr: String,
@@ -15,8 +27,8 @@ pub struct StorageClient {
 #[async_trait]
 impl KeyString for StorageClient {
     async fn get(&self, key: &str) -> TribResult<Option<String>> {
-        let client = Arc::clone(&self.client)
-        let mut cl_inner = client.lock().await;
+        let client = Arc::clone(&self.client) // for exp
+        let cl_inner = client.lock().await;
         if cl_inner.is_none() {
             *cl_inner = Some(
                 TribStorageClient::connect(self.addr.clone()).await?
