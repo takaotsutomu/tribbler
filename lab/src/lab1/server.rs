@@ -65,7 +65,7 @@ impl TribStorage for StorageServer {
             )),
             Err(error) => Err(tonic::Status::unknown(
                 format!("Error: {}", error),
-            ),
+            )),
         }
     }
 
