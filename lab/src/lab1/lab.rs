@@ -3,7 +3,9 @@ use std::{error::Error, sync::Arc};
 use tonic::transport::Server;
 
 use tribbler::{
-    config::BackConfig, err::TribResult, rpc::trib_storage_server::TribStorageServer,
+    config::BackConfig,
+    err::TribResult,
+    rpc::trib_storage_server::TribStorageServer,
     storage::Storage,
 };
 
@@ -38,8 +40,7 @@ pub async fn serve_back(config: BackConfig) -> TribResult<()> {
         }
     };
 
-    // Create a new key-value server instance with
-    // the storage instance
+    // Create a new key-value server instance with the storage instance
     let kvserver = TribStorageServer::new(StorageServer {
         storage: config.storage,
     });
