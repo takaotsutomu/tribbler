@@ -68,6 +68,7 @@ pub async fn serve_back(config: BackConfig) -> TribResult<()> {
                 }
                 return Err(Box::new(error));
             }
+            println!("in lab setup success!!");
         }
         None => {
             if let Err(error) = Server::builder()
