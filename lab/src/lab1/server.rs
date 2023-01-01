@@ -2,9 +2,15 @@ use async_trait::async_trait;
 use tonic;
 
 use tribbler::rpc::{
-    trib_storage_server::TribStorage, Bool as RpcBool, Clock as RpcClock, Key as RpcKey,
-    KeyValue as RpcKeyValue, ListRemoveResponse as RpcListRemoveResponse, Pattern as RpcPattern,
-    StringList as RpcStringList, Value as RpcValue,
+    trib_storage_server::TribStorage, 
+    Bool as RpcBool,
+    Clock as RpcClock,
+    Key as RpcKey,
+    KeyValue as RpcKeyValue,
+    ListRemoveResponse as RpcListRemoveResponse,
+    Pattern as RpcPattern,
+    StringList as RpcStringList,
+    Value as RpcValue,
 };
 use tribbler::storage::{KeyValue, List, Pattern, Storage};
 
@@ -18,12 +24,24 @@ impl TribStorage for StorageServer {
         &self,
         request: tonic::Request<RpcKey>,
     ) -> Result<tonic::Response<RpcValue>, tonic::Status> {
-        match self.storage.get(&request.into_inner().key).await {
-            Ok(Some(value)) => Ok(tonic::Response::new(RpcValue { value: value })),
-            Ok(None) => Ok(tonic::Response::new(RpcValue {
-                value: String::from(""),
-            })),
-            Err(error) => Err(tonic::Status::unknown(format!("Error: {}", error))),
+        match self
+            .storage
+            .get(&request.into_inner().key)
+            .await
+        {
+            Ok(Some(value)) => Ok(tonic::Response::new(
+                RpcValue {
+                    value: value,
+                },
+            )),
+            Ok(None) => Ok(tonic::Response::new(
+                RpcValue {
+                    value: String::from(""),
+                },
+            )),
+            Err(error) => Err(tonic::Status::unknown(
+                format!("Error: {}", error),
+            )),
         }
     }
 
@@ -40,8 +58,14 @@ impl TribStorage for StorageServer {
             })
             .await
         {
-            Ok(value) => Ok(tonic::Response::new(RpcBool { value: value })),
-            Err(error) => Err(tonic::Status::unknown(format!("Error: {}", error))),
+            Ok(value) => Ok(tonic::Response::new(
+                RpcBool {
+                    value: value,
+                },
+            )),
+            Err(error) => Err(tonic::Status::unknown(
+                format!("Error: {}", error),
+            ),
         }
     }
 
@@ -58,8 +82,14 @@ impl TribStorage for StorageServer {
             })
             .await
         {
-            Ok(List(list)) => Ok(tonic::Response::new(RpcStringList { list: list })),
-            Err(error) => Err(tonic::Status::unknown(format!("Error: {}", error))),
+            Ok(List(list)) => Ok(tonic::Response::new(
+                RpcStringList {
+                    list: list,
+                },
+            )),
+            Err(error) => Err(tonic::Status::unknown(
+                format!("Error: {}", error),
+            )),
         }
     }
 
@@ -68,8 +98,14 @@ impl TribStorage for StorageServer {
         request: tonic::Request<RpcKey>,
     ) -> Result<tonic::Response<RpcStringList>, tonic::Status> {
         match self.storage.list_get(&request.into_inner().key).await {
-            Ok(List(list)) => Ok(tonic::Response::new(RpcStringList { list: list })),
-            Err(error) => Err(tonic::Status::unknown(format!("Error: {}", error))),
+            Ok(List(list)) => Ok(tonic::Response::new(
+                RpcStringList {
+                    list: list,
+                },
+            )),
+            Err(error) => Err(tonic::Status::unknown(
+                format!("Error: {}", error),
+            )),
         }
     }
 
@@ -86,8 +122,14 @@ impl TribStorage for StorageServer {
             })
             .await
         {
-            Ok(value) => Ok(tonic::Response::new(RpcBool { value: value })),
-            Err(error) => Err(tonic::Status::unknown(format!("Error: {}", error))),
+            Ok(value) => Ok(tonic::Response::new(
+                RpcBool {
+                    value: value,
+                },
+            )),
+            Err(error) => Err(tonic::Status::unknown(
+                format!("Error: {}", error),
+            )),
         }
     }
 
@@ -104,10 +146,14 @@ impl TribStorage for StorageServer {
             })
             .await
         {
-            Ok(value) => Ok(tonic::Response::new(RpcListRemoveResponse {
-                removed: value,
-            })),
-            Err(error) => Err(tonic::Status::unknown(format!("Error: {}", error))),
+            Ok(value) => Ok(tonic::Response::new(
+                RpcListRemoveResponse {
+                    removed: value,
+                }
+            )),
+            Err(error) => Err(tonic::Status::unknown(
+                format!("Error: {}", error),
+            )),
         }
     }
 
@@ -124,8 +170,14 @@ impl TribStorage for StorageServer {
             })
             .await
         {
-            Ok(List(list)) => Ok(tonic::Response::new(RpcStringList { list: list })),
-            Err(error) => Err(tonic::Status::unknown(format!("Error: {}", error))),
+            Ok(List(list)) => Ok(tonic::Response::new(
+                RpcStringList {
+                    list: list,
+                },
+            )),
+            Err(error) => Err(tonic::Status::unknown(
+                format!("Error: {}", error),
+            )),
         }
     }
 
@@ -133,9 +185,19 @@ impl TribStorage for StorageServer {
         &self,
         request: tonic::Request<RpcClock>,
     ) -> Result<tonic::Response<RpcClock>, tonic::Status> {
-        match self.storage.clock(request.into_inner().timestamp).await {
-            Ok(value) => Ok(tonic::Response::new(RpcClock { timestamp: value })),
-            Err(error) => Err(tonic::Status::unknown(format!("Error: {}", error))),
+        match self
+            .storage
+            .clock(request.into_inner().timestamp)
+            .await
+        {
+            Ok(value) => Ok(tonic::Response::new(
+                RpcClock {
+                    timestamp: value,
+                },
+            )),
+            Err(error) => Err(tonic::Status::unknown(
+                format!("Error: {}", error),
+            )),
         }
     }
 }

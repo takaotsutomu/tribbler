@@ -5,8 +5,11 @@ use tonic::transport::Channel;
 
 use tribbler::err::TribResult;
 use tribbler::rpc::{
-    trib_storage_client::TribStorageClient, Clock as RpcClock, Key as RpcKey,
-    KeyValue as RpcKeyValue, Pattern as RpcPattern,
+    trib_storage_client::TribStorageClient, 
+    Clock as RpcClock,
+    Key as RpcKey,
+    KeyValue as RpcKeyValue,
+    Pattern as RpcPattern,
 };
 use tribbler::storage::{KeyList, KeyString, KeyValue, List, Pattern, Storage};
 
