@@ -14,7 +14,7 @@ use crate::lab1::{client::StorageClient, server::StorageServer};
 pub async fn serve_back(config: BackConfig) -> TribResult<()> {
     // Resolve the address string to a SocketAddr value
     let mut addr_iter = match config.addr.to_socket_addrs() {
-        Ok(addr_iter) => addr_iter,
+        Ok(socket_addr_iter) => socket_addr_iter,
         Err(error) => {
             if let Some(tx) = config.ready {
                 if let Err(error) = tx.send(false) {
@@ -25,7 +25,7 @@ pub async fn serve_back(config: BackConfig) -> TribResult<()> {
         }
     };
     let addr = match addr_iter.next() {
-        Some(addr) => addr,
+        Some(socket_addr) => socket_addr,
         None => {
             if let Some(tx) = config.ready {
                 if let Err(error) = tx.send(false) {
@@ -38,41 +38,53 @@ pub async fn serve_back(config: BackConfig) -> TribResult<()> {
         }
     };
 
-    // Create a new key-value server instance
-    let kvsrv = TribStorageServer::new(StorageServer {
+    // Create a new key-value server instance with
+    // the storage instance
+    let kvserver = TribStorageServer::new(StorageServer {
         storage: config.storage,
     });
 
-    // Expose the service at the SocketAddr value
-    match Server::builder()
-        .add_service(kvsrv)
-        .serve_with_shutdown(addr.clone(), async {
-            if let Some(mut rx) = config.shutdown {
-                rx.recv().await;
-            }
-        })
-        .await
-    {
-        Ok(_) => {
-            // Notify that the kv store is ready to serve
-            if let Some(tx) = config.ready {
-                if let Err(error) = tx.send(true) {
-                    return Err(Box::new(error));
-                }
-            }
-            println!("build up succeed! address,{} ", addr);
-            Ok(())
-        }
-        Err(error) => {
-            if let Some(tx) = config.ready {
-                if let Err(error) = tx.send(false) {
-                    return Err(Box::new(error));
-                }
-            }
-            println!("build up failed! address,{} ", addr);
-            Err(Box::new(error))
+    // Notify that the backend is ready to serve
+    if let Some(tx) = config.ready.clone() {
+        if let Err(error) = tx.send(true) {
+            return Err(Box::new(error));
         }
     }
+
+    // Expose the service at the SocketAddr value
+    match config.shutdown {
+        Some(mut rx) => {
+            if let Err(error) = Server::builder()
+                .add_service(kvserver)
+                .serve_with_shutdown(addr, async {
+                    rx.recv().await;
+                })
+                .await
+            {
+                if let Some(tx) = config.ready {
+                    if let Err(error) = tx.send(false) {
+                        return Err(Box::new(error));
+                    }
+                }
+                return Err(Box::new(error));
+            }
+        }
+        None => {
+            if let Err(error) = Server::builder()
+                .add_service(kvserver)
+                .serve(addr)
+                .await
+            {
+                if let Some(tx) = config.ready {
+                    if let Err(error) = tx.send(false) {
+                        return Err(Box::new(error));
+                    }
+                }
+                return Err(Box::new(error));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// This function should create a new client which implements the [Storage]
