@@ -1,16 +1,13 @@
 use std::net::ToSocketAddrs;
+use std::{error::Error, sync::Arc};
 use tonic::transport::Server;
 
 use tribbler::{
-    config::BackConfig,
-    err::TribResult,
+    config::BackConfig, err::TribResult, rpc::trib_storage_server::TribStorageServer,
     storage::Storage,
 };
 
-use crate::lab1::{
-    client::StorageClient,
-    server::StorageServer,
-};
+use crate::lab1::{client::StorageClient, server::StorageServer};
 
 /// an async function which blocks indefinitely until interrupted serving on
 /// the host and port specified in the [BackConfig] parameter.
@@ -20,44 +17,62 @@ pub async fn serve_back(config: BackConfig) -> TribResult<()> {
         Ok(addr_iter) => addr_iter,
         Err(error) => {
             if let Some(tx) = config.ready {
-                tx.send(false).unwrap();
+                if let Err(error) = tx.send(false) {
+                    return Err(Box::new(error));
+                }
             }
-            return Box::new(error);
+            return Err(Box::new(error));
         }
-    } // TODO: use unwrap or else
+    };
     let addr = match addr_iter.next() {
         Some(addr) => addr,
         None => {
             if let Some(tx) = config.ready {
-                tx.send(false).unwrap();
-            }
-            return Box::new(error);
-        }
-    }
-
-    // Construct a new key-value service
-    let kvsrv = TribStorageServer::new(
-        StorageServer {
-            storage: config.storage,
-        }
-    );
-
-    // Expose the service at the SocketAddr address
-    Server::builder()
-        .add_service(kvsrv)
-        .serve_with_shutdown(
-            addr,
-            async {
-                if let Some(rx) = config.shutdown {
-                    rx.recv().await;
+                if let Err(error) = tx.send(false) {
+                    return Err(Box::new(error));
                 }
-            },
-        )
-        .await;
-    if let Some(ready) = config.ready {
-        ready.send(true).unwrap();
+            }
+            return Err(Box::<dyn Error + Send + Sync>::from(
+                "Error: Bad address".to_string(),
+            ));
+        }
+    };
+
+    // Create a new key-value server instance
+    let kvsrv = TribStorageServer::new(StorageServer {
+        storage: config.storage,
+    });
+
+    // Expose the service at the SocketAddr value
+    match Server::builder()
+        .add_service(kvsrv)
+        .serve_with_shutdown(addr.clone(), async {
+            if let Some(mut rx) = config.shutdown {
+                rx.recv().await;
+            }
+        })
+        .await
+    {
+        Ok(_) => {
+            // Notify that the kv store is ready to serve
+            if let Some(tx) = config.ready {
+                if let Err(error) = tx.send(true) {
+                    return Err(Box::new(error));
+                }
+            }
+            println!("build up succeed! address,{} ", addr);
+            Ok(())
+        }
+        Err(error) => {
+            if let Some(tx) = config.ready {
+                if let Err(error) = tx.send(false) {
+                    return Err(Box::new(error));
+                }
+            }
+            println!("build up failed! address,{} ", addr);
+            Err(Box::new(error))
+        }
     }
-    Ok(())
 }
 
 /// This function should create a new client which implements the [Storage]
@@ -67,5 +82,5 @@ pub async fn new_client(addr: &str) -> TribResult<Box<dyn Storage>> {
     Ok(Box::new(StorageClient {
         addr: addr.to_string(),
         client: Arc::new(tokio::sync::Mutex::new(None)),
-     }))
+    }))
 }
