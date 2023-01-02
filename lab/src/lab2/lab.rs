@@ -1,11 +1,20 @@
-use tribbler::{config::KeeperConfig, err::TribResult, storage::BinStorage, trib::Server};
+use std::sync::LwLock;
+
+use tribbler::{
+    config::KeeperConfig,
+    err::TribResult,
+    storage::BinStorage,
+    trib::Server
+};
+
+use crate::lab2::binstorage::BinStorageClient;
 
 /// This function accepts a list of backend addresses, and returns a
 /// type which should implement the [BinStorage] trait to access the
 /// underlying storage system.
 #[allow(unused_variables)]
 pub async fn new_bin_client(backs: Vec<String>) -> TribResult<Box<dyn BinStorage>> {
-    todo!()
+    Ok(Box::new(BinStorageClient { backs }))
 }
 
 /// this async function accepts a [KeeperConfig] that should be used to start
@@ -32,5 +41,8 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
 pub async fn new_front(
     bin_storage: Box<dyn BinStorage>,
 ) -> TribResult<Box<dyn Server + Send + Sync>> {
-    todo!()
+    Ok(Box::new(Front {
+        bin_storage,
+        user_cache: RwLock::<Vec<String>>::new(vec![]),
+    }))
 }
