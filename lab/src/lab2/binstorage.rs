@@ -1,74 +1,142 @@
+use std::collections::hash_map::DefaultHasher;
 use async_trait::async_trait;
 
 use tribbler::{
+    colon,
     err::TribResult,
-    storage::BinStorage
+    storage::{BinStorage, KeyValue, List},
 };
 
-use crate::colon;
+use crate::lab1::client::StorageClient;
 
 pub struct BinStorageClient {
+    // Addresses of the backend servers
     pub(crate) backs: Vec<String>,
 }
 
 #[async_trait]
 impl BinStorage for BinStorageClient {
     async fn bin(&self, name: &str) -> TribResult<Box<dyn Storage>> {
-        let mut kprefix = colon::escape(name.to_string());
-        kprefix.push_str("::".to_string);
+        let name = name.to_string();
+
+        // Create the prefix ("{name}::") to translate the key 
+        // into a fully qualified one in a form of "{name}::{key}"
+        let mut prefix = colon::escape(name.clone());
+        prefix.push_str("::".to_string());
+
+        // Determine the backend node will this bin belongs to
+        let mut hasher DefaultHasher::new();
+        hasher.write(name.as_bytes());
+        let hashcode = hasher.finish();
+        let back = &self.backs[hashcode % n as usize];
+        
+        // Create a new storage client instance
+        let storage = StorageClient {
+            addr: format!("http://{}", back.clone());
+        }
+        Ok(Box::new(Bin { name, prefix, storage}))
     }
 }
 
 pub struct Bin {
     pub(crate) name: String,
-    pub(crate) kprefix: String,
+    pub(crate) prefix: String,
     pub(crate) storage: StorageClient,
-    // When a caller calls get("some-key") on the bin "alice", 
-    // for example, the bin storage client translates this into
-    // a get("alice::some-key") RPC call on back-end 0.
 }
 
 #[async_trait]
 impl KeyString for Bin {
-    /// Gets a value. If no value set, return [None]
     async fn get(&self, key: &str) -> TribResult<Option<String>> {
-        todo!();
+        let key_esc = colon::escape(key.to_string());
+        let key_escfq = self.prefix.clone().push_str(&key_esc);
+        Ok(self.storage.get(&key_escfq).await?)
     }
 
-    /// Set kv.key to kv.value. return true when no error.
     async fn set(&self, kv: &KeyValue) -> TribResult<bool> {
-        todo!();
+        let key_esc = colon::escape(&kv.key.to_string());
+        let key_escfq = self.prefix.clone().push_str(&key_esc);
+        Ok(self
+            .storage
+            .set(&KeyValue {
+                key: key_escfq,
+                value: kv.value.clone(),
+            })
+            .await?)
     }
 
-    /// List all the keys of non-empty pairs where the key matches
-    /// the given pattern.
     async fn keys(&self, p: &Pattern) -> TribResult<List> {
-        todo!();
+        let prefix_esc = colon::escape(p.prefix.clone());
+        let prefix_escfq = self.prefix.clone().push_str(&prefix_esc);
+        let suffix_esc = colon::escape(p.suffix.clone());
+        let suffix_escfq = self.prefix.clone().push_str(&suffix_esc);
+        let List(keys_escfq) = self
+            .storage
+            .set(&KeyValue {
+                prefix: prefix_escfq,
+                suffix: suffix_escfq,
+            })
+            .await?;
+        let keys: Vec<String> = Vec::new();
+        keys_escfq.into_iter().for_each(|kescfq| {
+            let key_esc = String::from(&kescfq[self.prefix.len()..]);
+            let key = colon::escape(key_esc);
+            keys.push(key);
+        });
+        Ok(List(keys))
     }
 }
 
 #[async_trait]
 impl KeyList for Bin {
-    /// Get the list. Empty if not set.
     async fn list_get(&self, key: &str) -> TribResult<List> {
-        todo!();
+        let key_esc = colon::escape(key.to_string());
+        let key_ecsfq = self.prefix.clone().push_str(&key_esc);
+        Ok(self.storage.list_get(&key_fq).await?)
     }
 
-    /// Append a string to the list. return true when no error.
     async fn list_append(&self, kv: &KeyValue) -> TribResult<bool> {
-        todo!();
+        let key_esc = colon::escape(key.to_string());
+        let key_ecsfq = self.prefix.clone().push_str(&key_esc);
+        Ok(self
+            .storage
+            .list_append(&KeyValue {
+                key: key_escfq,
+                value: kv.value.clone(),
+            })
+            .await?)
     }
 
-    /// Removes all elements that are equal to `kv.value` in list `kv.key`
-    /// returns the number of elements removed.
     async fn list_remove(&self, kv: &KeyValue) -> TribResult<u32> {
-        todo!();
+        let key_esc = colon::escape(kv.key.to_string());
+        let key_ecsfq = self.prefix.clone().push_str(&key_esc);
+        Ok(self
+            .storage
+            .list_remove(&KeyValue {
+                key: key_ecsfq,
+                value: kv.value.clone(),
+            })
+            .await?)
     }
 
-    /// List all the keys of non-empty lists, where the key matches
-    /// the given pattern.
     async fn list_keys(&self, p: &Pattern) -> TribResult<List> {
-        todo!();
+        let prefix_esc = colon::escape(p.prefix.clone());
+        let prefix_escfq = self.prefix.clone().push_str(&prefix_esc);
+        let suffix_esc = colon::escape(p.suffix.clone());
+        let suffix_escfq = self.prefix.clone().push_str(&suffix_esc);
+        let List(keys_fq) = self
+            .storage
+            .set(&KeyValue {
+                prefix: prefix_escfq,
+                suffix: suffix_escfq,
+            })
+            .await?;
+        let keys: Vec<String> = Vec::new();
+        keys_escfq.into_iter().for_each(|kescfq| {
+            let key_esc = String::from(&kescfq[self.prefix.len()..]);
+            let key = colon::escape(key_esc);
+            keys.push(key);
+        });
+        Ok(List(keys))
     }
 
 }
@@ -76,6 +144,6 @@ impl KeyList for Bin {
 #[async_trait]
 impl Storage for Bin {
     async fn clock(&self, at_least: u64) -> TribResult<u64> {
-        todo!();
+        Ok(self.storage.clock(at_least).await?)
     }
 }

@@ -1,5 +1,3 @@
-use async_trait::async_trait;
-
 use std::{
     cmp::{min, Ordering},
     collections::{HashMap, HashSet},
@@ -9,17 +7,13 @@ use std::{
     },
     time::SystemTime,
 };
+use async_trait::async_trait;
 
 use tribbler::{
     err::{TribResult, TribblerError},
     trib::{is_valid_username, Server, Trib, MAX_TRIB_FETCH, MAX_TRIB_LEN, MIN_LIST_USER},
     storage,
 };
-
-pub(crate) struct Front {
-    bin_storage: Box<dyn BinStorage>,
-    user_cache: RwLock<Vec<User>>,
-}
 
 #[derive(Debug)]
 struct User [
@@ -135,6 +129,30 @@ impl PartialEq for SeqTrib {
     }
 }
 
+pub(crate) struct FrontServer {
+    bin_storage: Box<dyn BinStorage>,
+    cache_users: RwLock<Vec<User>>,
+}
+
+
+#[async_trait]
+impl Server for FrontServer {
+    async fn sign_up(&self, user: &str) -> TribResult<()> {
+        let mut users = self.users.write().unwrap();
+        if !is_valid_username(user) {
+            return Err(Box::new(TribblerError::InvalidUsername(user.to_string())));
+        }
+        match users.contains_key(user) {
+            true => Err(Box::new(TribblerError::UsernameTaken(user.to_string()))),
+            false => {
+                users.insert(user.to_string(), User::new());
+                let mut homes = self.homes.write().unwrap();
+                homes.insert(user.to_string(), vec![]);
+                Ok(())
+            }
+        }
+    }
+}
 /// The [RefServer] is a reference implementation for the [crate::trib::Server]
 ///
 /// This struct should be able to be used across threads when wrapped with an

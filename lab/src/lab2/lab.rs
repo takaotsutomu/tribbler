@@ -1,4 +1,5 @@
-use std::sync::LwLock;
+use std::{error::Error, sync::LwLock};
+use tokio::{select, time};
 
 use tribbler::{
     config::KeeperConfig,
@@ -7,6 +8,7 @@ use tribbler::{
     trib::Server
 };
 
+use crate::lab1::client::StorageClient;
 use crate::lab2::binstorage::BinStorageClient;
 
 /// This function accepts a list of backend addresses, and returns a
@@ -25,7 +27,48 @@ pub async fn new_bin_client(backs: Vec<String>) -> TribResult<Box<dyn BinStorage
 /// started.
 #[allow(unused_variables)]
 pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
-    todo!()
+    let storages: Vec<Storage> = Vec::new();
+    kc.into_iter().for_each(|back| {
+        storages.push(StorageClient {
+            addr: foramt!("http://{}", back),
+        });
+    })
+    if let Some(tx) = kc.ready.clone() {
+        if let Err(error) = tx.send(true) {
+            return Err(Box::new(error));
+        }
+    }
+    select! {
+        () = async {
+            let max_timestamp: u64 = 0;
+            loop {
+                for stor in storages {
+                    let clock = match stor.clock(keep_clock).await {
+                        Ok(clock) => clock,
+                        Err(error) => {
+                            if let Some(tx) = kc.ready.clone() {
+                                if let Err(error) = tx.send(false) {
+                                    return Err(Box::new(error));
+                                }
+                            }
+                            return Err(Box::new(error));
+                        }
+                    }
+                    if clock > max_timestamp {
+                        max_timestamp = clock;
+                    }
+                }
+                max_timestamp += 1;
+                time::sleep(time::Duration::from_secs(1)).await;
+            }
+        } => {}
+        () = async {
+            if let Some(mut rx) = kc.shutdown {
+                rx.recv().await;
+            }
+        } => {}
+    }
+    Ok(())
 }
 
 /// this function accepts a [BinStorage] client which should be used in order to
@@ -41,7 +84,7 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
 pub async fn new_front(
     bin_storage: Box<dyn BinStorage>,
 ) -> TribResult<Box<dyn Server + Send + Sync>> {
-    Ok(Box::new(Front {
+    Ok(Box::new(FrontServer {
         bin_storage,
         user_cache: RwLock::<Vec<String>>::new(vec![]),
     }))
