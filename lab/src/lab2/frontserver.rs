@@ -8,6 +8,7 @@ use std::{
     time::SystemTime,
 };
 use async_trait::async_trait;
+use serde::{self, Deserialize, Serialize}
 
 use tribbler::{
     err::{TribResult, TribblerError},
@@ -155,25 +156,101 @@ impl PartialOrd for SeqTrib {
 
 pub(crate) struct FrontServer {
     bin_storage: Box<dyn BinStorage>,
-    cache_users: RwLock<Vec<User>>,
+    cache_users: RwLock<Vec<String>>,
 }
 
 
 #[async_trait]
 impl Server for FrontServer {
     async fn sign_up(&self, user: &str) -> TribResult<()> {
-        let mut users = self.users.write().unwrap();
         if !is_valid_username(user) {
             return Err(Box::new(TribblerError::InvalidUsername(user.to_string())));
         }
-        match users.contains_key(user) {
-            true => Err(Box::new(TribblerError::UsernameTaken(user.to_string()))),
-            false => {
-                users.insert(user.to_string(), User::new());
+        let bin = self.bin_storage.bin("Users").await?;
+        let users = bin.list_get("Users").await?.0;
+        if users.contains(user) {
+            return Err(Box::new(TribblerError::UsernameTaken(user.to_string())));
+        }
+        if bin
+            .list_append(&KeyValue {
+                Key: "Users".to_string(),
+                value: user.to_string(),
+            })
+            .await?
+        {
+            return Err(Box::new(TribblerError::Unknown(user.to_string())));
+        }
+        Ok(())
+    }
+
+    async fn list_users(&self) -> TribResult<Vec<String>> {
+        let bin = self.bin_storage.bin("Users").await;
+        let mut users = bin.list_get("Users").await?.0;
+        users.sort();
+        Ok(users[..min(MIN_LIST_USER), k.len()].to_vec())
+        // we need to use cache
+    }
+
+    async fn post(&self, who: &str, post: &str, clock: u64) -> TribResult<()> {
+        if post.len() > MAX_TRIB_LEN {
+            return Err(Box::new(TribblerError::TribTooLong));
+        }
+        let bin = self.bin_storage.bin("User").await;
+        match bin.list_get(who).await {
+            Some(user) => {
+                let clock = bin.clock(clock).await?;
+                let time = SystemTime::new()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .as_secs();
+                let post = serde_json::to_string(&Trib {
+                    user: who.to_string(),
+                    message: post.to_string(),
+                    clock,
+                    time,
+                })
+                .unwrap();
+            }
+            None => Err(Box::new(TribblerError::UserDoesNotExist(who.to_string()))),
+        }
+        match users.get_mut(who) {
+            Some(user) => {
+                if self.seq.load(atomic::Ordering::SeqCst) == u64::MAX {
+                    return Err(Box::new(TribblerError::MaxedSeq));
+                }
+                let _ = self.seq.fetch_update(
+                    atomic::Ordering::SeqCst,
+                    atomic::Ordering::SeqCst,
+                    |v| {
+                        if v < clock {
+                            Some(clock)
+                        } else {
+                            None
+                        }
+                    },
+                );
+
+                let trib = user.post(
+                    who,
+                    post,
+                    self.seq.fetch_add(1, atomic::Ordering::SeqCst),
+                    SystemTime::now()
+                        .duration_since(SystemTime::UNIX_EPOCH)?
+                        .as_secs(),
+                );
+                // add it to the timeline of my followers
                 let mut homes = self.homes.write().unwrap();
-                homes.insert(user.to_string(), vec![]);
+                for follower in user.followers.iter() {
+                    homes
+                        .entry(follower.to_string())
+                        .and_modify(|e| e.push(trib.clone()));
+                }
+                // add it to my own timeline
+                homes
+                    .entry(who.to_string())
+                    .and_modify(|e| e.push(trib.clone()));
                 Ok(())
             }
+            None => Err(Box::new(TribblerError::UserDoesNotExist(who.to_string()))),
         }
     }
 }
