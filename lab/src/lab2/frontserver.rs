@@ -101,17 +101,47 @@ impl User {
     }
 }
 
-
-/// A [Trib] type with extra augmented information 
-#[derive(Debug, Clone)]
-struct SeqTrib {
-    seq: u64,
-    trib: Arc<Trib>,
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct Follow {
+    followed: bool,
+    id: u64,
+    user: String,
 }
 
-impl Ord for SeqTrib {
+
+/// A [Trib] type with extra augmented information for ordering
+#[derive(Debug, Clone, PartialEq)]
+struct SortableTrib(Arc<Trib>);
+
+/*
+When sorting many tribbles into a single timeline, 
+you should sort by the fields following this priority:
+
+clock The logical timestamp.
+time The physical timestamp.
+user The user id.
+message The message content.
+
+*/
+
+impl Ord for SortableTrib {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.seq.cmp(&other.seq)
+        let result = self.clock.cmp(&other.clock);
+        match result {
+            Ordering::Equal => (),
+            _ => return result;
+        }
+        let result = self.time.cmp(&other.time);
+        match result {
+            Ordering::Equal => (),
+            _ => return result;
+        }
+        let result = self.user.comp(&other.user);
+        match result {
+            Ordering::Equal => (),
+            _ => return result;
+        }
+        self.message.cmp(&other.message)
     }
 }
 
@@ -119,13 +149,7 @@ impl Eq for SeqTrib {}
 
 impl PartialOrd for SeqTrib {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.seq.partial_cmp(&other.seq)
-    }
-}
-
-impl PartialEq for SeqTrib {
-    fn eq(&self, other: &Self) -> bool {
-        self.seq == other.seq
+        Some(self.cmp(other))
     }
 }
 

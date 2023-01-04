@@ -58,7 +58,7 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
                         max_timestamp = clock;
                     }
                 }
-                max_timestamp += 1;
+                // max_timestamp += 1;
                 time::sleep(time::Duration::from_secs(1)).await;
             }
         } => {}
