@@ -16,102 +16,21 @@ use tribbler::{
     storage,
 };
 
-#[derive(Debug)]
-struct User [
-    username: String,
-    following: HashSet<String>,
-    followers: HashSet<String>,
-    seq_trib: Hec<SeqTrib>,
-    tribs: Vec<Arc<Trib>>,
-]
-
-impl User {
-    /// creates a new user reference
-    fn new() -> User {
-        User {
-            following: HashSet::new(),
-            followers: HashSet::new(),
-            seq_tribs: vec![],
-            tribs: vec![],
-        }
-    }
-
-    /// Checks whether this user is following `whom`
-    fn is_following(&self, whom: &str) -> bool {
-        self.following.contains(whom)
-    }
-
-    /// updates [User] to follow `whom`
-    fn follow(&mut self, whom: &str) {
-        self.following.insert(whom.to_string());
-    }
-
-    /// updates [User] to unfollow `whom`
-    fn unfollow(&mut self, whom: &str) {
-        self.following.remove(whom);
-    }
-
-    /// updates [User] to add to the follower list
-    fn add_follower(&mut self, who: &str) {
-        self.followers.insert(who.to_string());
-    }
-
-    /// updates [User] to remove from the follower list
-    fn remove_follower(&mut self, who: &str) {
-        self.followers.remove(who);
-    }
-
-    /// lists the [User]s that this user follows
-    fn list_following(&self) -> Vec<String> {
-        self.following.iter().map(String::clone).collect()
-    }
-
-    /// instructs this [User] to post a new [Trib] with the given parameters
-    /// returns a reference to the posted [Trib]
-    ///
-    /// Note: `time` refers to Unix time. In other words, time since epoch in
-    /// milliseconds
-    fn post(&mut self, who: &str, msg: &str, seq: u64, time: u64) -> Arc<Trib> {
-        // make the new trib
-        let trib = Arc::new(Trib {
-            user: who.to_string(),
-            message: msg.to_string(),
-            time,
-            clock: seq,
-        });
-        // append sequential number
-        let seq_trib = SeqTrib {
-            seq,
-            trib: trib.clone(),
-        };
-
-        // add to my own tribs
-        self.tribs.push(trib.clone());
-        self.seq_tribs.push(seq_trib);
-        trib
-    }
-
-    /// Gets the list of [Trib]s posted by this [User]
-    fn list_tribs(&self) -> &[Arc<Trib>] {
-        let ntrib = self.tribs.len();
-        let start = match ntrib.cmp(&MAX_TRIB_FETCH) {
-            Ordering::Greater => ntrib - MAX_TRIB_FETCH,
-            _ => 0,
-        };
-        &self.tribs[start..]
-    }
-}
+static BIN_USER_BASE: &str = "UserBase";
+static KEY_USERS: &str = "users";
+static KEY_TRIBS: %str = "tribs";
+static KEY_FOLLOWS: &str = "follows";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct Follow {
-    followed: bool,
-    id: u64,
     user: String,
+    followed: bool,
+    timestamp: u64,
 }
 
 
 /// A [Trib] type with extra augmented information for ordering
-#[derive(Debug, Clone, PartialEq)]
+#[derive(PartialEq, Debug, Clone)]
 struct SortableTrib(Arc<Trib>);
 
 /*
@@ -159,6 +78,38 @@ pub(crate) struct FrontServer {
     cache_users: RwLock<Vec<String>>,
 }
 
+pub struct RefServer {
+    users: Arc<RwLock<HashMap<String, User>>>,
+    homes: Arc<RwLock<HashMap<String, Vec<Arc<Trib>>>>>,
+    seq: AtomicU64,
+}
+
+impl FrontServer {
+    /// rebuilds the users' homepage based on the current set of [SeqTrib]s and
+    /// other users' tribs
+    fn rebuild_home(&self, who: &User, users: &HashMap<String, User>) -> Vec<Arc<Trib>> {
+        let mut home: Vec<SeqTrib> = vec![];
+        home.append(&mut who.seq_tribs.clone());
+        for user in who.following.iter() {
+            match users.get(user) {
+                Some(v) => {
+                    home.append(&mut v.seq_tribs.clone());
+                }
+                None => continue,
+            };
+        }
+        home.sort();
+        home.iter()
+            .map(|x| x.trib.clone())
+            .collect::<Vec<Arc<Trib>>>()
+    }
+}
+
+impl Default for RefServer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[async_trait]
 impl Server for FrontServer {
@@ -166,14 +117,14 @@ impl Server for FrontServer {
         if !is_valid_username(user) {
             return Err(Box::new(TribblerError::InvalidUsername(user.to_string())));
         }
-        let bin = self.bin_storage.bin("Users").await?;
-        let users = bin.list_get("Users").await?.0;
+        let bin = self.bin_storage.bin(BIN_USER_BASE).await;
+        let users = bin.list_get(KEY_USERS).await?.0;
         if users.contains(user) {
             return Err(Box::new(TribblerError::UsernameTaken(user.to_string())));
         }
         if bin
             .list_append(&KeyValue {
-                Key: "Users".to_string(),
+                Key: KEY_USERS.to_string(),
                 value: user.to_string(),
             })
             .await?
@@ -184,8 +135,8 @@ impl Server for FrontServer {
     }
 
     async fn list_users(&self) -> TribResult<Vec<String>> {
-        let bin = self.bin_storage.bin("Users").await;
-        let mut users = bin.list_get("Users").await?.0;
+        let bin = self.bin_storage.bin(BIN_USER_BASE).await;
+        let mut users = bin.list_get(KEY_USERS).await?.0;
         users.sort();
         Ok(users[..min(MIN_LIST_USER), k.len()].to_vec())
         // we need to use cache
@@ -195,63 +146,184 @@ impl Server for FrontServer {
         if post.len() > MAX_TRIB_LEN {
             return Err(Box::new(TribblerError::TribTooLong));
         }
-        let bin = self.bin_storage.bin("User").await;
-        match bin.list_get(who).await {
-            Some(user) => {
-                let clock = bin.clock(clock).await?;
-                let time = SystemTime::new()
+        let bin = self.bin_storage.bin(BIN_USER_BASE).await;
+        if !bin.list_get(KEY_USERS).await?.0.contains(who) {
+            return Err(Box::new(TribblerError::UserDoesNotExist(who.to_string())));
+        }
+        let bin = self.bin_storage.bin(who).await?;
+        let post = serde_json::to_string(&Trib {
+            user: who.to_string(),
+            message: post.to_string(),
+            clock: bin.clock(clock).await?,
+            time: SystemTime::new()
                     .duration_since(SystemTime::UNIX_EPOCH)
-                    .as_secs();
-                let post = serde_json::to_string(&Trib {
-                    user: who.to_string(),
-                    message: post.to_string(),
-                    clock,
-                    time,
-                })
-                .unwrap();
-            }
-            None => Err(Box::new(TribblerError::UserDoesNotExist(who.to_string()))),
+                    .as_secs(),                
+        })
+        .unwrap();
+        if !bin
+            .list_append(&KeyValue {
+                key: TRIBS.to_string(),
+                value: post,
+            })
+            .await?
+        {
+            return Err(Box::new(TribblerError::Unknown(
+                format!("failed to post for user: {}", who);
+            )));
         }
-        match users.get_mut(who) {
-            Some(user) => {
-                if self.seq.load(atomic::Ordering::SeqCst) == u64::MAX {
-                    return Err(Box::new(TribblerError::MaxedSeq));
-                }
-                let _ = self.seq.fetch_update(
-                    atomic::Ordering::SeqCst,
-                    atomic::Ordering::SeqCst,
-                    |v| {
-                        if v < clock {
-                            Some(clock)
-                        } else {
-                            None
-                        }
-                    },
-                );
+        Ok(())
+    }
 
-                let trib = user.post(
-                    who,
-                    post,
-                    self.seq.fetch_add(1, atomic::Ordering::SeqCst),
-                    SystemTime::now()
-                        .duration_since(SystemTime::UNIX_EPOCH)?
-                        .as_secs(),
-                );
-                // add it to the timeline of my followers
-                let mut homes = self.homes.write().unwrap();
-                for follower in user.followers.iter() {
-                    homes
-                        .entry(follower.to_string())
-                        .and_modify(|e| e.push(trib.clone()));
-                }
-                // add it to my own timeline
-                homes
-                    .entry(who.to_string())
-                    .and_modify(|e| e.push(trib.clone()));
-                Ok(())
-            }
-            None => Err(Box::new(TribblerError::UserDoesNotExist(who.to_string()))),
+    async fn tribs(&self, user: &str) -> TribResult<Vec<Arc<Trib>>> {
+        let bin = self.bin_storage.bin(BIN_USER_BASE).await;
+        if !bin.list_get(KEY_USERS).await?.0.contains(user) {
+            return Err(Box::new(TribblerError::UserDoesNotExist(user.to_string())));
         }
+        let bin = self.bin_storage.bin(user).await;
+        let raw_tribs = bin.list_get(KEY_TRIBS).await?.0;
+        let mut tribs = raw_tribs
+            .iter()
+            .map(|t| SortableTrib(Arc::new(serde_json::from_str::<Trib>::()))
+            .collect::<Vec<SortableTribe>>();
+        tribs.sort();
+        if tribs.len() > MAX_TRIB_FETCH {
+            let start = tribs.len() - MAX_TRIB_FETCH;
+            tribs = tribs[start..];
+        }
+        Ok(tribs)
+    }
+
+    async fn follow(&self, who: &str, whom: &str) -> TribResult<()> {
+        if self.is_following(who, whom).await? {
+            return Err(Box::new(TribblerError::AlreadyFollowing(
+                who.to_string(),
+                whom.to_string(),
+            )));
+        }
+        if self.following(who.await?.len() == MAX_FOLLOWING {
+            return Err(Box::new(TribblerError::FollowingTooMany));
+        }
+        let bin = self.bin_storage.bin(who).await;
+        let follow = serde_json::to_string(&Follow {
+            user: whom.to_string(),
+            followed: true,
+            timestamp: bin.clock(0).await?,
+        })
+        .unwrap();
+        if !bin
+            .list_append(&KeyValue {
+                key: KEY_FOLLOWS.to_string(),
+                value: follow,
+            })
+            .await?
+        {
+            return Err(Box::new(TribblerError::Unknown(
+                format!("failed to follow user: {}", whom);
+            )));
+        }
+        Ok(())
+    }
+
+    async fn unfollow(&self, who: &str, whom: &str) -> TribResult<()> {
+        if !self.is_following(who, whom).await? {
+            return Err(Box::new(TribblerError::AlreadyFollowing(
+                who.to_string(),
+                whom.to_string(),
+            )));
+        }
+        let bin = self.bin_storage.bin(who).await;
+        let follow = serde_json::to_string(&Follow {
+            user: whom.to_string(),
+            followed: false,
+            timestamp: bin.clock(0).await?,
+        })
+        .unwrap();
+        if !bin
+            .list_append(&KeyValue {
+                key: KEY_FOLLOWS.to_string(),
+                value: follow,
+            })
+            .await?
+        {
+            return Err(Box::new(TribblerError::Unknown(
+                format!("failed to unfollow user: {}", whom);
+            )));
+        }
+        Ok(())
+    }
+
+    async fn is_following(&self, who: &str, whom: &str) -> TribResult<bool> {
+        if who == whom {
+            return Err(Box::new(TribblerError::WhoWhom(who.to_string())));
+        }
+        let bin = self.bin_storage.bin(BIN_USER_BASE).await;
+        let sgdup_users = bin.list_get(KEY_USERS).await?.0;
+        if !sgdup_users.contains(who) || !sgdup_users.contains(whom) {
+            return Err(Box::new(TribblerError::UserDoesNotExist(who.to_string())));
+        }
+        let bin = self.bin_storage.bin(who).await;
+        let raw_fol = bin.list_get(KEY_FOLLOWS).await?.0;
+        let mut ret = false;
+        for raw_ff in raw_follows.iter().rev() {
+            if serde_json::from_string::<Follow>::(raw_fol)
+                .unwrap()
+                .user
+                .eq(whom)
+            {
+                ret = entry.followed;
+                break
+            }
+        }
+        Ok(ret)
+    }
+
+    async fn following(&self, who: &str) -> TribResult<Vec<String>> {
+        let bin = self.binstorage.bin(BIN_USER_BASE).await;
+        if !bin.list_get(KEY_USERS).await?.0.contains(who) {
+            return Err(Box::new(TribblerError::UserDoesNotExist(who.to_string())));
+        }
+        let bin = self.binstorage.bin(who).await;
+        let raw_follows = bin.list_get(KEY_FOLLOWS).await?.0;
+        let mut following: HashSet<String> = HashSet::new();
+        for raw_fol in raw_follows.iter() {
+            let fol =  serde_json::from_string::<Follow>::(raw_fol).unwrap()
+            if fol.followed {
+                following.insert(fol.user);
+            } else {
+                following.remove(&fol.user);
+            }
+        }
+        Ok(following.iter().collect())
+    }
+
+    async fn home(&self, user: &str) -> TribResult<Vec<Arc<Trib>>> {
+        let bin = self.binstorage.bin(BIN_USER_BASE).await;
+        if !bin.list_get(KEY_USERS).await?.0.contains(who) {
+            return Err(Box::new(TribblerError::UserDoesNotExist(who.to_string())));
+        }
+        let mut home: Vec<Arc<Trib>> = Vec::new();
+        let mut tribs = self.tribs(user).await?;
+        home.append(&mut tribs);
+        let following = self.following(user).await?;
+        for user in following {
+            let mut tribs = self.tribs(&name).await?;
+            home.append(&mut tribs);
+        }
+        let ntrib = home.len();
+        let start = match ntrib.cmp(&MAX_TRIB_FETCH) {
+            Ordering::Greater => ntrib - MAX_TRIB_FETCH,
+            _ => 0,
+        };
+        let home = home
+            .to_vec()
+            .iter()
+            .map(|t| SortableTrib(t) )
+            .collect::<Vec<SortableTrib>>();
+        home.sort();
+        Ok(home[start..]
+            .iter()
+            .map(|st| st.0)
+            .collect::<Vec<Arc<Trib>>>())
     }
 }
 /// The [RefServer] is a reference implementation for the [crate::trib::Server]
@@ -283,236 +355,3 @@ impl Server for FrontServer {
 /// }
 ///
 /// ```
-pub struct RefServer {
-    users: Arc<RwLock<HashMap<String, User>>>,
-    homes: Arc<RwLock<HashMap<String, Vec<Arc<Trib>>>>>,
-    seq: AtomicU64,
-}
-
-impl RefServer {
-    /// Creates a [RefServer] with no data
-    pub fn new() -> RefServer {
-        RefServer {
-            users: Arc::new(RwLock::new(HashMap::new())),
-            homes: Arc::new(RwLock::new(HashMap::new())),
-            seq: AtomicU64::new(0),
-        }
-    }
-
-    /// rebuilds the users' homepage based on the current set of [SeqTrib]s and
-    /// other users' tribs
-    fn rebuild_home(&self, who: &User, users: &HashMap<String, User>) -> Vec<Arc<Trib>> {
-        let mut home: Vec<SeqTrib> = vec![];
-        home.append(&mut who.seq_tribs.clone());
-        for user in who.following.iter() {
-            match users.get(user) {
-                Some(v) => {
-                    home.append(&mut v.seq_tribs.clone());
-                }
-                None => continue,
-            };
-        }
-        home.sort();
-        home.iter()
-            .map(|x| x.trib.clone())
-            .collect::<Vec<Arc<Trib>>>()
-    }
-}
-
-impl Default for RefServer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl Server for RefServer {
-    async fn sign_up(&self, user: &str) -> TribResult<()> {
-        let mut users = self.users.write().unwrap();
-        if !is_valid_username(user) {
-            return Err(Box::new(TribblerError::InvalidUsername(user.to_string())));
-        }
-        match users.contains_key(user) {
-            true => Err(Box::new(TribblerError::UsernameTaken(user.to_string()))),
-            false => {
-                users.insert(user.to_string(), User::new());
-                let mut homes = self.homes.write().unwrap();
-                homes.insert(user.to_string(), vec![]);
-                Ok(())
-            }
-        }
-    }
-
-    async fn list_users(&self) -> TribResult<Vec<String>> {
-        let users = self.users.read().unwrap();
-        let mut k: Vec<&String> = users.keys().collect();
-        k.sort();
-        let sorted = k[..min(MIN_LIST_USER, k.len())].to_vec();
-        let res: Vec<String> = sorted
-            .iter()
-            .map(|x| x.to_string())
-            .collect::<Vec<String>>();
-        Ok(res)
-    }
-
-    async fn post(&self, who: &str, post: &str, clock: u64) -> TribResult<()> {
-        if post.len() > MAX_TRIB_LEN {
-            return Err(Box::new(TribblerError::TribTooLong));
-        }
-        let mut users = self.users.write().unwrap();
-        match users.get_mut(who) {
-            Some(user) => {
-                if self.seq.load(atomic::Ordering::SeqCst) == u64::MAX {
-                    return Err(Box::new(TribblerError::MaxedSeq));
-                }
-                let _ = self.seq.fetch_update(
-                    atomic::Ordering::SeqCst,
-                    atomic::Ordering::SeqCst,
-                    |v| {
-                        if v < clock {
-                            Some(clock)
-                        } else {
-                            None
-                        }
-                    },
-                );
-
-                let trib = user.post(
-                    who,
-                    post,
-                    self.seq.fetch_add(1, atomic::Ordering::SeqCst),
-                    SystemTime::now()
-                        .duration_since(SystemTime::UNIX_EPOCH)?
-                        .as_secs(),
-                );
-                // add it to the timeline of my followers
-                let mut homes = self.homes.write().unwrap();
-                for follower in user.followers.iter() {
-                    homes
-                        .entry(follower.to_string())
-                        .and_modify(|e| e.push(trib.clone()));
-                }
-                // add it to my own timeline
-                homes
-                    .entry(who.to_string())
-                    .and_modify(|e| e.push(trib.clone()));
-                Ok(())
-            }
-            None => Err(Box::new(TribblerError::UserDoesNotExist(who.to_string()))),
-        }
-    }
-
-    async fn tribs(&self, user: &str) -> TribResult<Vec<Arc<Trib>>> {
-        let users = self.users.read().unwrap();
-        match users.get(user) {
-            Some(user) => Ok(user.list_tribs().to_vec()),
-            None => Err(Box::new(TribblerError::UserDoesNotExist(user.to_string()))),
-        }
-    }
-
-    async fn follow(&self, who: &str, whom: &str) -> TribResult<()> {
-        if who == whom {
-            return Err(Box::new(TribblerError::WhoWhom(who.to_string())));
-        }
-        let mut users = self.users.write().unwrap();
-        if !users.contains_key(whom) {
-            return Err(Box::new(TribblerError::UserDoesNotExist(who.to_string())));
-        }
-        match users.get_mut(who) {
-            Some(u) => {
-                if u.is_following(whom) {
-                    return Err(Box::new(TribblerError::AlreadyFollowing(
-                        who.to_string(),
-                        whom.to_string(),
-                    )));
-                }
-                u.follow(whom);
-            }
-            None => return Err(Box::new(TribblerError::UserDoesNotExist(who.to_string()))),
-        };
-        let _ = users
-            .entry(whom.to_string())
-            .and_modify(|e| e.add_follower(who));
-        // rebuild home
-        match users.get(who) {
-            Some(user) => {
-                let mut homes = self.homes.write().unwrap();
-                homes.insert(who.to_string(), self.rebuild_home(user, &users));
-                Ok(())
-            }
-            None => Err(Box::new(TribblerError::UserDoesNotExist(who.to_string()))),
-        }
-    }
-
-    async fn unfollow(&self, who: &str, whom: &str) -> TribResult<()> {
-        if who == whom {
-            return Err(Box::new(TribblerError::WhoWhom(who.to_string())));
-        }
-        let mut users = self.users.write().unwrap();
-        if !users.contains_key(whom) {
-            return Err(Box::new(TribblerError::UserDoesNotExist(whom.to_string())));
-        }
-        match users.get_mut(who) {
-            Some(u) => {
-                if !u.is_following(whom) {
-                    return Err(Box::new(TribblerError::NotFollowing(
-                        who.to_string(),
-                        whom.to_string(),
-                    )));
-                }
-                u.unfollow(whom);
-            }
-            None => return Err(Box::new(TribblerError::UserDoesNotExist(whom.to_string()))),
-        };
-        let _ = users
-            .entry(whom.to_string())
-            .and_modify(|e| e.remove_follower(who));
-        // rebuild home
-        match users.get(who) {
-            Some(user) => {
-                let mut homes = self.homes.write().unwrap();
-                homes.insert(who.to_string(), self.rebuild_home(user, &users));
-                Ok(())
-            }
-            None => Err(Box::new(TribblerError::UserDoesNotExist(who.to_string()))),
-        }
-    }
-
-    async fn is_following(&self, who: &str, whom: &str) -> TribResult<bool> {
-        if who == whom {
-            return Err(Box::new(TribblerError::WhoWhom(who.to_string())));
-        }
-        let users = self.users.read().unwrap();
-        if !users.contains_key(whom) {
-            return Err(Box::new(TribblerError::UserDoesNotExist(whom.to_string())));
-        }
-        match users.get(who) {
-            Some(user) => Ok(user.is_following(whom)),
-            None => Err(Box::new(TribblerError::UserDoesNotExist(who.to_string()))),
-        }
-    }
-
-    async fn following(&self, who: &str) -> TribResult<Vec<String>> {
-        let users = self.users.read().unwrap();
-        match users.get(who) {
-            Some(user) => Ok(user.list_following()),
-            None => Err(Box::new(TribblerError::UserDoesNotExist(who.to_string()))),
-        }
-    }
-
-    async fn home(&self, user: &str) -> TribResult<Vec<Arc<Trib>>> {
-        let homes = self.homes.read().unwrap();
-        match homes.get(user) {
-            Some(home) => {
-                let ntrib = home.len();
-                let start = match ntrib.cmp(&MAX_TRIB_FETCH) {
-                    Ordering::Greater => ntrib - MAX_TRIB_FETCH,
-                    _ => 0,
-                };
-                // let hm = &home[start..];
-                Ok(home[start..].to_vec())
-            }
-            None => Err(Box::new(TribblerError::UserDoesNotExist(user.to_string()))),
-        }
-    }
-}

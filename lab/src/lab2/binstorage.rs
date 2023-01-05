@@ -39,9 +39,9 @@ impl BinStorage for BinStorageClient {
 }
 
 pub struct Bin {
-    pub(crate) name: String,
-    pub(crate) prefix: String,
-    pub(crate) storage: StorageClient,
+    name: String,
+    prefix: String,
+    storage: StorageClient,
 }
 
 #[async_trait]
