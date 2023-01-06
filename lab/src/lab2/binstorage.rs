@@ -32,7 +32,8 @@ impl BinStorage for BinStorageClient {
         
         // Create a new storage client instance
         let storage = StorageClient {
-            addr: format!("http://{}", back.clone());
+            addr: format!("http://{}", back.clone()),
+            client: Arc::new(tokio::sync::Mutex::new(None)),
         }
         Ok(Box::new(Bin { name, prefix, storage}))
     }
