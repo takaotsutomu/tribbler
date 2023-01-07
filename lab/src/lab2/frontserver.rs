@@ -1,24 +1,23 @@
+use async_trait::async_trait;
+use serde::{self, Deserialize, Serialize};
 use std::{
     cmp::{min, Ordering},
-    collections::{HashMap, HashSet},
-    sync::{
-        atomic::{self, AtomicU64},
-        Arc, Mutex,
-    },
+    collections::HashSet,
+    sync::{Arc, Mutex},
     time::SystemTime,
 };
-use async_trait::async_trait;
-use serde::{self, Deserialize, Serialize}
 
 use tribbler::{
     err::{TribResult, TribblerError},
-    trib::{is_valid_username, Server, Trib, MAX_TRIB_FETCH, MAX_TRIB_LEN, MIN_LIST_USER},
-    storage,
+    storage::{BinStorage, KeyValue},
+    trib::{
+        is_valid_username, Server, Trib, MAX_FOLLOWING, MAX_TRIB_FETCH, MAX_TRIB_LEN, MIN_LIST_USER,
+    },
 };
 
 static BIN_USER_BASE: &str = "UserBase";
 static KEY_USERS: &str = "users";
-static KEY_TRIBS: %str = "tribs";
+static KEY_TRIBS: &str = "tribs";
 static KEY_FOLLOWS: &str = "follows";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -28,35 +27,40 @@ struct Follow {
     timestamp: u64,
 }
 
-
 /// A [Trib] type with extra augmented information for ordering
 #[derive(PartialEq, Debug, Clone)]
 struct SortableTrib(Arc<Trib>);
 
 impl Ord for SortableTrib {
     fn cmp(&self, other: &Self) -> Ordering {
-        let result = self.clock.cmp(&other.clock);
+        let result = self.0.clock.cmp(&other.0.clock);
         match result {
             Ordering::Equal => (),
-            _ => return result;
+            _ => {
+                return result;
+            }
         }
-        let result = self.time.cmp(&other.time);
+        let result = self.0.time.cmp(&other.0.time);
         match result {
             Ordering::Equal => (),
-            _ => return result;
+            _ => {
+                return result;
+            }
         }
-        let result = self.user.comp(&other.user);
+        let result = self.0.user.comp(&other.0.user);
         match result {
             Ordering::Equal => (),
-            _ => return result;
+            _ => {
+                return result;
+            }
         }
-        self.message.cmp(&other.message)
+        self.0.message.cmp(&other.0.message)
     }
 }
 
-impl Eq for SeqTrib {}
+impl Eq for SortableTrib {}
 
-impl PartialOrd for SeqTrib {
+impl PartialOrd for SortableTrib {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
@@ -75,12 +79,12 @@ impl Server for FrontServer {
         }
         let bin = self.bin_storage.bin(BIN_USER_BASE).await?;
         let users = bin.list_get(KEY_USERS).await?.0;
-        if users.contains(user) {
+        if users.contains(&user.to_string()) {
             return Err(Box::new(TribblerError::UsernameTaken(user.to_string())));
         }
         if !bin
             .list_append(&KeyValue {
-                Key: KEY_USERS.to_string(),
+                key: KEY_USERS.to_string(),
                 value: user.to_string(),
             })
             .await?
@@ -94,7 +98,7 @@ impl Server for FrontServer {
         let cache = self.users_cache.lock().unwrap();
         match cache.len().cmp(&MIN_LIST_USER) {
             Ordering::Less => {
-                drop(usr_cach);
+                drop(cache);
                 let bin = self.bin_storage.bin(BIN_USER_BASE).await?;
                 let mut users = bin.list_get(KEY_USERS).await?.0;
                 users.sort();
@@ -102,7 +106,7 @@ impl Server for FrontServer {
                 *cache = users[..min(MIN_LIST_USER, users.len())].to_vec();
                 Ok(cache.clone())
             }
-            _ => Ok(cache.clone())
+            _ => Ok(cache.clone()),
         }
     }
 
@@ -111,7 +115,7 @@ impl Server for FrontServer {
             return Err(Box::new(TribblerError::TribTooLong));
         }
         let bin = self.bin_storage.bin(BIN_USER_BASE).await?;
-        if !bin.list_get(KEY_USERS).await?.0.contains(who) {
+        if !bin.list_get(KEY_USERS).await?.0.contains(&who.to_string()) {
             return Err(Box::new(TribblerError::UserDoesNotExist(who.to_string())));
         }
         let bin = self.bin_storage.bin(who).await?;
@@ -119,9 +123,9 @@ impl Server for FrontServer {
             user: who.to_string(),
             message: post.to_string(),
             clock: bin.clock(clock).await?,
-            time: SystemTime::new()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .as_secs(),                
+            time: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)?
+                .as_secs(),
         })
         .unwrap();
         if !bin
@@ -131,24 +135,25 @@ impl Server for FrontServer {
             })
             .await?
         {
-            return Err(Box::new(TribblerError::Unknown(
-                format!("failed to post for user: {}", who);
-            )));
+            return Err(Box::new(TribblerError::Unknown(format!(
+                "failed to post for user: {}",
+                who
+            ))));
         }
         Ok(())
     }
 
     async fn tribs(&self, user: &str) -> TribResult<Vec<Arc<Trib>>> {
         let bin = self.bin_storage.bin(BIN_USER_BASE).await?;
-        if !bin.list_get(KEY_USERS).await?.0.contains(user) {
+        if !bin.list_get(KEY_USERS).await?.0.contains(&user.to_string()) {
             return Err(Box::new(TribblerError::UserDoesNotExist(user.to_string())));
         }
         let bin = self.bin_storage.bin(user).await?;
         let raw_tribs = bin.list_get(KEY_TRIBS).await?.0;
         let mut stribs = raw_tribs
             .iter()
-            .map(|t| SortableTrib(Arc::new(serde_json::from_str::<Trib>::()))
-            .collect::<Vec<SortableTribe>>();
+            .map(|t| SortableTrib(Arc::new(serde_json::from_str::<Trib>(t).unwrap())))
+            .collect::<Vec<SortableTrib>>();
         stribs.sort();
 
         let mut gc = false;
@@ -159,8 +164,8 @@ impl Server for FrontServer {
                 ntrib - MAX_TRIB_FETCH
             }
             _ => 0,
-        }
-        tribs = stribs[start..]
+        };
+        let tribs = stribs[start..]
             .to_vec()
             .iter()
             .map(|st| st.0)
@@ -168,19 +173,14 @@ impl Server for FrontServer {
 
         // Remove old tribbles if needed, i.e, there are > 100 tribbles
         if gc {
-            tribs[..start]
-                .to_vec()
-                .iter()
-                .for_each(|t| {
-                    match bin
-                        .list_remove(&KeyValue {
-                            key: KEY_TRIBS.to_string(),
-                            value: serde_json::to_string(t).unwrap();
-                        })
-                    { 
-                        _ => {} 
-                    }
-                })   
+            tribs[..start].to_vec().iter().for_each(|t| {
+                match bin.list_remove(&KeyValue {
+                    key: KEY_TRIBS.to_string(),
+                    value: serde_json::to_string(t).unwrap(),
+                }) {
+                    _ => {}
+                }
+            })
         }
         Ok(tribs)
     }
@@ -209,9 +209,10 @@ impl Server for FrontServer {
             })
             .await?
         {
-            return Err(Box::new(TribblerError::Unknown(
-                format!("failed to follow user: {}", whom);
-            )));
+            return Err(Box::new(TribblerError::Unknown(format!(
+                "failed to follow user: {}",
+                whom
+            ))));
         }
         Ok(())
     }
@@ -237,12 +238,12 @@ impl Server for FrontServer {
             })
             .await?
         {
-            return Err(Box::new(TribblerError::Unknown(
-                format!("failed to unfollow user: {}", whom);
-            )));
+            return Err(Box::new(TribblerError::Unknown(format!(
+                "failed to unfollow user: {}",
+                whom
+            ))));
         }
         Ok(())
-        // Check again?
     }
 
     async fn is_following(&self, who: &str, whom: &str) -> TribResult<bool> {
@@ -251,62 +252,60 @@ impl Server for FrontServer {
         }
         let bin = self.bin_storage.bin(BIN_USER_BASE).await?;
         let sgdup_users = bin.list_get(KEY_USERS).await?.0;
-        if !sgdup_users.contains(who) || !sgdup_users.contains(whom) {
+        if !sgdup_users.contains(&who.to_string()) ||
+            !sgdup_users.contains(&whom.to_string()) {
             return Err(Box::new(TribblerError::UserDoesNotExist(who.to_string())));
         }
         let bin = self.bin_storage.bin(who).await?;
-        let raw_fol = bin.list_get(KEY_FOLLOWS).await?.0;
+        let raw_follows = bin.list_get(KEY_FOLLOWS).await?.0;
         let mut result = false;
-        for raw_ff in raw_follows.iter().rev() {
-            if serde_json::from_string::<Follow>::(raw_fol)
-                .unwrap()
-                .user
-                .eq(whom)
-            {
-                result = entry.followed;
-                break
+        for raw_fol in raw_follows.iter().rev() {
+            let fol = serde_json::from_str::<Follow>(raw_fol).unwrap();
+            if fol.user.eq(whom) {
+                result = fol.followed;
+                break;
             }
         }
         Ok(result)
     }
 
     async fn following(&self, who: &str) -> TribResult<Vec<String>> {
-        let bin = self.binstorage.bin(BIN_USER_BASE).await?;
-        if !bin.list_get(KEY_USERS).await?.0.contains(who) {
+        let bin = self.bin_storage.bin(BIN_USER_BASE).await?;
+        if !bin.list_get(KEY_USERS).await?.0.contains(&who.to_string()) {
             return Err(Box::new(TribblerError::UserDoesNotExist(who.to_string())));
         }
-        let bin = self.binstorage.bin(who).await?;
+        let bin = self.bin_storage.bin(who).await?;
         let raw_follows = bin.list_get(KEY_FOLLOWS).await?.0;
         let mut following: HashSet<String> = HashSet::new();
         for raw_fol in raw_follows.iter() {
-            let fol =  serde_json::from_string::<Follow>::(raw_fol).unwrap()
+            let fol = serde_json::from_str::<Follow>(raw_fol).unwrap();
             if fol.followed {
                 following.insert(fol.user);
             } else {
                 following.remove(&fol.user);
             }
         }
-        Ok(following.iter().collect())
+        Ok(following.into_iter().collect())
     }
 
     async fn home(&self, user: &str) -> TribResult<Vec<Arc<Trib>>> {
-        let bin = self.binstorage.bin(BIN_USER_BASE).await?;
-        if !bin.list_get(KEY_USERS).await?.0.contains(who) {
-            return Err(Box::new(TribblerError::UserDoesNotExist(who.to_string())));
+        let bin = self.bin_storage.bin(BIN_USER_BASE).await?;
+        if !bin.list_get(KEY_USERS).await?.0.contains(&user.to_string()) {
+            return Err(Box::new(TribblerError::UserDoesNotExist(user.to_string())));
         }
         let mut timeline: Vec<Arc<Trib>> = Vec::new();
         let mut tribs = self.tribs(user).await?;
         // consider whether should do it directly
         timeline.append(&mut tribs);
         let following = self.following(user).await?;
-        for user in following {
-            let mut tribs = self.tribs(&name).await?;
+        for fol in following {
+            let mut tribs = self.tribs(&fol).await?;
             timeline.append(&mut tribs);
         }
         let timeline = timeline
             .to_vec()
-            .iter()
-            .map(|t| SortableTrib(t) )
+            .into_iter()
+            .map(|t| SortableTrib(t))
             .collect::<Vec<SortableTrib>>();
         timeline.sort();
 
@@ -317,7 +316,7 @@ impl Server for FrontServer {
         };
         Ok(timeline[start..]
             .to_vec()
-            .iter()
+            .into_iter()
             .map(|st| st.0)
             .collect::<Vec<Arc<Trib>>>())
     }

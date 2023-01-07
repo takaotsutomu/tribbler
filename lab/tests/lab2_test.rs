@@ -79,6 +79,7 @@ fn pat(prefix: &str, suffix: &str) -> Pattern {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_get_set() -> TribResult<()> {
     let (client, _handle, _tx) = setup(None, None).await?;
+    tokio::time::sleep(Duration::from_millis(500)).await;
     assert_eq!(None, client.get("").await?);
     assert_eq!(None, client.get("hello").await?);
     Ok(())
@@ -87,6 +88,7 @@ async fn test_get_set() -> TribResult<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_get_set_overwrite() -> TribResult<()> {
     let (client, _handle, _tx) = setup(None, None).await?;
+    tokio::time::sleep(Duration::from_millis(500)).await;
     client.set(&kv("h8liu", "run")).await?;
     assert_eq!(Some("run".to_string()), client.get("h8liu").await?);
     client.set(&kv("h8liu", "Run")).await?;
@@ -97,6 +99,7 @@ async fn test_get_set_overwrite() -> TribResult<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_set_none() -> TribResult<()> {
     let (client, _handle, _shut) = setup(None, None).await?;
+    tokio::time::sleep(Duration::from_millis(500)).await;
     client.set(&kv("h8liu", "")).await?;
     assert_eq!(None, client.get("h8liu").await?);
     client.set(&kv("h8liu", "k")).await?;
@@ -109,6 +112,7 @@ async fn test_set_none() -> TribResult<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_keys() -> TribResult<()> {
     let (client, _handle, _tx) = setup(None, None).await?;
+    tokio::time::sleep(Duration::from_millis(500)).await;
     let _ = client.set(&kv("h8liu", "1")).await?;
     let _ = client.set(&kv("h8he", "2")).await?;
     let keys = client.keys(&pat("h8", "")).await?;
@@ -123,6 +127,7 @@ async fn test_keys() -> TribResult<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_list() -> TribResult<()> {
     let (client, _handle, _shut) = setup(None, None).await?;
+    tokio::time::sleep(Duration::from_millis(500)).await;
     client.list_append(&kv("lst", "a")).await?;
     let l = client.list_get("lst").await?.0;
     assert_eq!(1, l.len());
@@ -157,6 +162,7 @@ async fn test_list() -> TribResult<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_list_keys() -> TribResult<()> {
     let (client, _srv, _shut) = setup(None, None).await?;
+    tokio::time::sleep(Duration::from_millis(500)).await;
     let _ = client.list_append(&kv("t1", "v1")).await?;
     let _ = client.list_append(&kv("t2", "v2")).await?;
     let r = client.list_keys(&pat("", "")).await?.0;
@@ -190,6 +196,7 @@ async fn test_bad_address() -> TribResult<()> {
             panic!("server should not have sent true ready signal");
         }
     };
+    tokio::time::sleep(Duration::from_millis(500)).await;
     let r = handle.await;
     assert!(r?.is_err());
     Ok(())
@@ -211,6 +218,7 @@ async fn test_store_before_serve() -> TribResult<()> {
     if !ready {
         panic!("failed to start")
     }
+    tokio::time::sleep(Duration::from_millis(500)).await;
     let client = lab2::new_bin_client(vec![DEFAULT_HOST.to_string()]).await?;
     assert_eq!(Some("hi".to_string()), client.get("hello").await?);
     Ok(())
@@ -244,6 +252,7 @@ async fn test_multi_serve() -> TribResult<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_clock() -> TribResult<()> {
     let (client, _srv, _shut) = setup(None, None).await?;
+    tokio::time::sleep(Duration::from_millis(500)).await;
     assert_eq!(2999, client.clock(2999).await?);
     assert_eq!(3000, client.clock(0).await?);
     assert_eq!(3001, client.clock(2999).await?);
@@ -308,6 +317,7 @@ async fn test_back_spawn_new_storage() -> TribResult<()> {
     };
     let _ = spawn_back(cfg);
     assert_eq!(true, rx.recv_timeout(Duration::from_secs(2))?);
+    tokio::time::sleep(Duration::from_millis(500)).await;
     assert_eq!(None, client.get("hello").await?);
     let _ = shut_tx.send(()).await;
     Ok(())
@@ -316,6 +326,7 @@ async fn test_back_spawn_new_storage() -> TribResult<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_concurrent_cli_ops() -> TribResult<()> {
     let (client, _srv, _shut) = setup(None, None).await?;
+    tokio::time::sleep(Duration::from_millis(500)).await;
     let client = Arc::new(client);
     let mut handles = vec![];
     for _ in 0..5 {
@@ -345,6 +356,7 @@ async fn test_concurrent_cli_ops() -> TribResult<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_shutdown() -> TribResult<()> {
     let (client, srv, shutdown) = setup(None, None).await?;
+    tokio::time::sleep(Duration::from_millis(500)).await;
     assert!(client.set(&kv("hello", "hi")).await?);
     let _ = shutdown.send(()).await;
     let r = srv.await.unwrap();

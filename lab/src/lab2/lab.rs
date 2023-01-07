@@ -1,15 +1,18 @@
-use std::{error::Error, sync::LwLock};
+use std::{
+    error::Error,
+    sync::{Arc, Mutex},
+};
 use tokio::{select, time};
 
 use tribbler::{
     config::KeeperConfig,
     err::TribResult,
-    storage::BinStorage,
-    trib::Server
+    storage::{BinStorage, Storage},
+    trib::Server,
 };
 
 use crate::lab1::client::StorageClient;
-use crate::lab2::binstorage::BinStorageClient;
+use crate::lab2::{binstorage::BinStorageClient, frontserver::FrontServer};
 
 /// This function accepts a list of backend addresses, and returns a
 /// type which should implement the [BinStorage] trait to access the
@@ -27,23 +30,24 @@ pub async fn new_bin_client(backs: Vec<String>) -> TribResult<Box<dyn BinStorage
 /// started.
 #[allow(unused_variables)]
 pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
-    let storages: Vec<Storage> = Vec::new();
-    kc.into_iter().for_each(|back| {
+    let storages: Vec<StorageClient> = Vec::new();
+    kc.backs.into_iter().for_each(|back| {
         storages.push(StorageClient {
-            addr: foramt!("http://{}", back),
+            addr: format!("http://{}", back),
+            client: Arc::new(tokio::sync::Mutex::new(None)),
         });
-    })
+    });
     if let Some(tx) = kc.ready.clone() {
         if let Err(error) = tx.send(true) {
             return Err(Box::new(error));
         }
     }
     select! {
-        () = async {
+        _ = async {
             let max_timestamp: u64 = 0;
             loop {
                 for stor in storages {
-                    let clock = match stor.clock(keep_clock).await {
+                    let clock = match stor.clock(max_timestamp).await {
                         Ok(clock) => clock,
                         Err(error) => {
                             if let Some(tx) = kc.ready.clone() {
@@ -51,9 +55,9 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
                                     return Err(Box::new(error));
                                 }
                             }
-                            return Err(Box::new(error));
+                            return Err(Box::<dyn Error + Send + Sync>::from(error));
                         }
-                    }
+                    };
                     if clock > max_timestamp {
                         max_timestamp = clock;
                     }
@@ -62,7 +66,7 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
                 time::sleep(time::Duration::from_secs(1)).await;
             }
         } => {}
-        () = async {
+        _ = async {
             if let Some(mut rx) = kc.shutdown {
                 rx.recv().await;
             }
@@ -86,6 +90,6 @@ pub async fn new_front(
 ) -> TribResult<Box<dyn Server + Send + Sync>> {
     Ok(Box::new(FrontServer {
         bin_storage,
-        user_cache: RwLock::<Vec<String>>::new(vec![]),
+        users_cache: Mutex::<Vec<String>>::new(vec![]),
     }))
 }

@@ -589,6 +589,8 @@
 //!
 //! ## Happy Lab 2!
 //!
+mod binstorage;
+mod frontserver;
 mod lab;
 pub use crate::lab2::lab::new_bin_client;
 pub use crate::lab2::lab::new_front;
