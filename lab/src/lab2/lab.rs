@@ -1,8 +1,5 @@
-use std::{
-    error::Error,
-    sync::{Arc, Mutex},
-};
-use tokio::{select, time};
+use std::sync::Arc;
+use tokio::{select, sync::Mutex, time};
 
 use tribbler::{
     config::KeeperConfig,
@@ -30,7 +27,7 @@ pub async fn new_bin_client(backs: Vec<String>) -> TribResult<Box<dyn BinStorage
 /// started.
 #[allow(unused_variables)]
 pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
-    let storages: Vec<StorageClient> = Vec::new();
+    let mut storages: Vec<StorageClient> = Vec::new();
     kc.backs.into_iter().for_each(|back| {
         storages.push(StorageClient {
             addr: format!("http://{}", back),
@@ -44,18 +41,18 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
     }
     select! {
         _ = async {
-            let max_timestamp: u64 = 0;
+            let mut max_timestamp: u64 = 0;
             loop {
-                for stor in storages {
+                for stor in storages.iter() {
                     let clock = match stor.clock(max_timestamp).await {
                         Ok(clock) => clock,
                         Err(error) => {
                             if let Some(tx) = kc.ready.clone() {
                                 if let Err(error) = tx.send(false) {
-                                    return Err(Box::new(error));
+                                    return TribResult::<()>::Err(Box::new(error));
                                 }
                             }
-                            return Err(Box::<dyn Error + Send + Sync>::from(error));
+                            return TribResult::<()>::Err(error);
                         }
                     };
                     if clock > max_timestamp {

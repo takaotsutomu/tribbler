@@ -36,7 +36,7 @@ impl BinStorage for BinStorageClient {
             client: Arc::new(tokio::sync::Mutex::new(None)),
         };
         Ok(Box::new(Bin {
-            name,
+            _name: name,
             prefix,
             storage,
         }))
@@ -44,7 +44,7 @@ impl BinStorage for BinStorageClient {
 }
 
 pub struct Bin {
-    name: String,
+    _name: String,
     prefix: String,
     storage: StorageClient,
 }
@@ -77,7 +77,7 @@ impl KeyString for Bin {
         prefix_escfq.push_str(&prefix_esc);
         let suffix_esc = colon::escape(p.suffix.clone());
         let mut suffix_escfq = self.prefix.clone();
-        prefix_escfq.push_str(&suffix_esc);
+        suffix_escfq.push_str(&suffix_esc);
         let List(keys_escfq) = self
             .storage
             .keys(&Pattern {
@@ -85,7 +85,7 @@ impl KeyString for Bin {
                 suffix: suffix_escfq,
             })
             .await?;
-        let keys: Vec<String> = Vec::new();
+        let mut keys: Vec<String> = Vec::new();
         keys_escfq.into_iter().for_each(|kescfq| {
             let key_esc = String::from(&kescfq[self.prefix.len()..]);
             let key = colon::escape(key_esc);
@@ -136,6 +136,7 @@ impl KeyList for Bin {
         prefix_escfq.push_str(&prefix_esc);
         let suffix_esc = colon::escape(p.suffix.clone());
         let mut suffix_escfq = self.prefix.clone();
+        suffix_escfq.push_str(&suffix_esc);
         let List(keys_fq) = self
             .storage
             .list_keys(&Pattern {
@@ -143,7 +144,7 @@ impl KeyList for Bin {
                 suffix: suffix_escfq,
             })
             .await?;
-        let keys: Vec<String> = Vec::new();
+        let mut keys: Vec<String> = Vec::new();
         keys_fq.into_iter().for_each(|kescfq| {
             let key_esc = String::from(&kescfq[self.prefix.len()..]);
             let key = colon::escape(key_esc);

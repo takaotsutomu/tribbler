@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use lab::{self, lab1, lab2};
+use lab::{self, lab1::{self, client::StorageClient}, lab2::binstorage::Bin};
 use log::LevelFilter;
 use tokio::{sync::mpsc::Sender as MpscSender, task::JoinHandle};
 
@@ -15,6 +15,7 @@ use tribbler::addr::rand::rand_port;
 #[allow(unused_imports)]
 use tribbler::{
     self,
+    colon,
     config::BackConfig,
     err::{TribResult, TribblerError},
     storage::{KeyList, KeyString, KeyValue, MemStorage, Pattern, Storage},
@@ -54,7 +55,18 @@ async fn setup(
             "back failed to start".to_string(),
         )));
     }
-    let client = lab2::new_bin_client(vec![addr.to_string()]).await?;
+    let name = "jerry".to_string();
+    let mut prefix = colon::escape("jerry".clone());
+    prefix.push_str(&"::".to_string());
+    let stor = StorageClient {
+        addr: format!("http://{}", addr),
+        client: Arc::new(tokio::sync::Mutex::new(None)),
+    };
+    let client = Box::<Bin>::new(Bin {
+        _name: name,
+        prefix,
+        storage: stor,
+    });
     Ok((client, handle, shut_tx.clone()))
 }
 
@@ -219,7 +231,18 @@ async fn test_store_before_serve() -> TribResult<()> {
         panic!("failed to start")
     }
     tokio::time::sleep(Duration::from_millis(500)).await;
-    let client = lab2::new_bin_client(vec![DEFAULT_HOST.to_string()]).await?;
+    let name = "jerry".to_string();
+    let mut prefix = colon::escape("jerry".clone());
+    prefix.push_str(&"::".to_string());
+    let stor = StorageClient {
+        addr: format!("http://{}", DEFAULT_HOST),
+        client: Arc::new(tokio::sync::Mutex::new(None)),
+    };
+    let client = Box::<Bin>::new(Bin {
+        _name: name,
+        prefix,
+        storage: stor,
+    });
     assert_eq!(Some("hi".to_string()), client.get("hello").await?);
     Ok(())
 }
@@ -283,8 +306,19 @@ async fn test_spawn_same_addr() -> TribResult<()> {
     };
     let _ = spawn_back(cfg);
     assert_eq!(true, rx.recv_timeout(Duration::from_secs(2))?);
-
-    let client = lab2::new_bin_client(vec![addr.clone()]).await?;
+    
+    let name = "jerry".to_string();
+    let mut prefix = colon::escape("jerry".clone());
+    prefix.push_str(&"::".to_string());
+    let stor = StorageClient {
+        addr: format!("http://{}", addr.clone()),
+        client: Arc::new(tokio::sync::Mutex::new(None)),
+    };
+    let client = Box::<Bin>::new(Bin {
+        _name: name,
+        prefix,
+        storage: stor,
+    });
     client.set(&kv("hello", "hi")).await?;
     assert_eq!(Some("hi".to_string()), client.get("hello").await?);
     Ok(())
@@ -303,7 +337,18 @@ async fn test_back_spawn_new_storage() -> TribResult<()> {
     };
     let handle = spawn_back(cfg);
     assert_eq!(true, rx.recv_timeout(Duration::from_secs(2))?);
-    let client = lab2::new_bin_client(vec![host.clone()]).await?;
+    let name = "jerry".to_string();
+    let mut prefix = colon::escape("jerry".clone());
+    prefix.push_str(&"::".to_string());
+    let stor = StorageClient {
+        addr: format!("http://{}", host),
+        client: Arc::new(tokio::sync::Mutex::new(None)),
+    };
+    let client = Box::<Bin>::new(Bin {
+        _name: name,
+        prefix,
+        storage: stor,
+    });
     client.set(&kv("hello", "hi")).await?;
     let _ = shut_tx.send(()).await?;
     let _ = handle.await;
@@ -332,10 +377,18 @@ async fn test_concurrent_cli_ops() -> TribResult<()> {
     for _ in 0..5 {
         let addr = format!("http://{}", DEFAULT_HOST);
         let jh = tokio::spawn(async move {
-            let client = match lab2::new_bin_client(vec![DEFAULT_HOST.to_string()]).await {
-                Ok(c) => c,
-                Err(e) => return Err(TribblerError::Unknown(e.to_string())),
+            let name = "jerry".to_string();
+            let mut prefix = colon::escape("jerry".clone());
+            prefix.push_str(&"::".to_string());
+            let stor = StorageClient {
+                addr: format!("http://{}", addr),
+                client: Arc::new(tokio::sync::Mutex::new(None)),
             };
+            let client = Box::<Bin>::new(Bin {
+                _name: name,
+                prefix,
+                storage: stor,
+            });
             for _ in 0..10 {
                 if let Err(e) = client.list_append(&kv("lst", "item")).await {
                     return Err(TribblerError::Unknown(e.to_string()));

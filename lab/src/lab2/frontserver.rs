@@ -3,9 +3,10 @@ use serde::{self, Deserialize, Serialize};
 use std::{
     cmp::{min, Ordering},
     collections::HashSet,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::SystemTime,
 };
+use tokio::sync::Mutex;
 
 use tribbler::{
     err::{TribResult, TribblerError},
@@ -28,7 +29,7 @@ struct Follow {
 }
 
 /// A [Trib] type with extra augmented information for ordering
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 struct SortableTrib(Arc<Trib>);
 
 impl Ord for SortableTrib {
@@ -47,7 +48,7 @@ impl Ord for SortableTrib {
                 return result;
             }
         }
-        let result = self.0.user.comp(&other.0.user);
+        let result = self.0.user.cmp(&other.0.user);
         match result {
             Ordering::Equal => (),
             _ => {
@@ -66,9 +67,18 @@ impl PartialOrd for SortableTrib {
     }
 }
 
+impl PartialEq for SortableTrib {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.clock == other.0.clock
+            && self.0.time == other.0.time
+            && self.0.user == other.0.user
+            && self.0.message == other.0.message
+    }
+}
+
 pub(crate) struct FrontServer {
-    bin_storage: Box<dyn BinStorage>,
-    users_cache: Mutex<Vec<String>>,
+    pub(crate) bin_storage: Box<dyn BinStorage>,
+    pub(crate) users_cache: Mutex<Vec<String>>,
 }
 
 #[async_trait]
@@ -95,16 +105,16 @@ impl Server for FrontServer {
     }
 
     async fn list_users(&self) -> TribResult<Vec<String>> {
-        let cache = self.users_cache.lock().unwrap();
+        let cache = self.users_cache.lock().await;
         match cache.len().cmp(&MIN_LIST_USER) {
             Ordering::Less => {
-                drop(cache);
+                std::mem::drop(cache);
                 let bin = self.bin_storage.bin(BIN_USER_BASE).await?;
                 let mut users = bin.list_get(KEY_USERS).await?.0;
                 users.sort();
-                let mut cache = self.users_cache.lock().unwrap();
+                let mut cache = self.users_cache.lock().await;
                 *cache = users[..min(MIN_LIST_USER, users.len())].to_vec();
-                Ok(cache.clone())
+                return Ok(cache.clone());
             }
             _ => Ok(cache.clone()),
         }
@@ -168,7 +178,7 @@ impl Server for FrontServer {
         let tribs = stribs[start..]
             .to_vec()
             .iter()
-            .map(|st| st.0)
+            .map(|st| st.0.clone())
             .collect::<Vec<Arc<Trib>>>();
 
         // Remove old tribbles if needed, i.e, there are > 100 tribbles
@@ -252,8 +262,8 @@ impl Server for FrontServer {
         }
         let bin = self.bin_storage.bin(BIN_USER_BASE).await?;
         let sgdup_users = bin.list_get(KEY_USERS).await?.0;
-        if !sgdup_users.contains(&who.to_string()) ||
-            !sgdup_users.contains(&whom.to_string()) {
+        if !sgdup_users.contains(&who.to_string()) 
+            || !sgdup_users.contains(&whom.to_string()) {
             return Err(Box::new(TribblerError::UserDoesNotExist(who.to_string())));
         }
         let bin = self.bin_storage.bin(who).await?;
@@ -302,7 +312,7 @@ impl Server for FrontServer {
             let mut tribs = self.tribs(&fol).await?;
             timeline.append(&mut tribs);
         }
-        let timeline = timeline
+        let mut timeline = timeline
             .to_vec()
             .into_iter()
             .map(|t| SortableTrib(t))
@@ -317,7 +327,7 @@ impl Server for FrontServer {
         Ok(timeline[start..]
             .to_vec()
             .into_iter()
-            .map(|st| st.0)
+            .map(|st| st.0.clone())
             .collect::<Vec<Arc<Trib>>>())
     }
 }
