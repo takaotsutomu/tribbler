@@ -69,13 +69,12 @@ pub async fn serve_back(config: BackConfig) -> TribResult<()> {
                 }
                 return Err(Box::new(error));
             }
-            println!("in lab setup success!!");
         }
         None => {
             if let Err(error) = Server::builder()
                 .add_service(kvserver)
                 .serve(addr)
-                .await
+                .await 
             {
                 if let Some(tx) = config.ready {
                     if let Err(error) = tx.send(false) {
