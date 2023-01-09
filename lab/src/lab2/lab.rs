@@ -40,7 +40,7 @@ pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()> {
         }
     }
     select! {
-        _ = async {
+        _ = async move {
             let mut max_timestamp: u64 = 0;
             loop {
                 for stor in storages.iter() {
