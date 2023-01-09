@@ -11,7 +11,7 @@ use crate::lab1::client::StorageClient;
 
 pub struct BinStorageClient {
     // Addresses of the backend servers
-    pub(crate) backs: Vec<String>,
+    pub backs: Vec<String>,
 }
 
 #[async_trait]
@@ -44,9 +44,9 @@ impl BinStorage for BinStorageClient {
 }
 
 pub struct Bin {
-    _name: String,
-    prefix: String,
-    storage: StorageClient,
+    pub _name: String,
+    pub prefix: String,
+    pub storage: StorageClient,
 }
 
 #[async_trait]
@@ -76,13 +76,11 @@ impl KeyString for Bin {
         let mut prefix_escfq = self.prefix.clone();
         prefix_escfq.push_str(&prefix_esc);
         let suffix_esc = colon::escape(p.suffix.clone());
-        let mut suffix_escfq = self.prefix.clone();
-        suffix_escfq.push_str(&suffix_esc);
         let List(keys_escfq) = self
             .storage
             .keys(&Pattern {
                 prefix: prefix_escfq,
-                suffix: suffix_escfq,
+                suffix: suffix_esc,
             })
             .await?;
         let mut keys: Vec<String> = Vec::new();
@@ -135,13 +133,11 @@ impl KeyList for Bin {
         let mut prefix_escfq = self.prefix.clone();
         prefix_escfq.push_str(&prefix_esc);
         let suffix_esc = colon::escape(p.suffix.clone());
-        let mut suffix_escfq = self.prefix.clone();
-        suffix_escfq.push_str(&suffix_esc);
         let List(keys_fq) = self
             .storage
             .list_keys(&Pattern {
                 prefix: prefix_escfq,
-                suffix: suffix_escfq,
+                suffix: suffix_esc,
             })
             .await?;
         let mut keys: Vec<String> = Vec::new();

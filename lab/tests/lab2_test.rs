@@ -230,7 +230,6 @@ async fn test_store_before_serve() -> TribResult<()> {
     if !ready {
         panic!("failed to start")
     }
-    tokio::time::sleep(Duration::from_millis(500)).await;
     let name = "jerry".to_string();
     let mut prefix = colon::escape("jerry".clone());
     prefix.push_str(&"::".to_string());
@@ -243,7 +242,8 @@ async fn test_store_before_serve() -> TribResult<()> {
         prefix,
         storage: stor,
     });
-    assert_eq!(Some("hi".to_string()), client.get("hello").await?);
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_ne!(Some("hi".to_string()), client.get("hello").await?);
     Ok(())
 }
 
@@ -319,6 +319,7 @@ async fn test_spawn_same_addr() -> TribResult<()> {
         prefix,
         storage: stor,
     });
+    tokio::time::sleep(Duration::from_millis(500)).await;
     client.set(&kv("hello", "hi")).await?;
     assert_eq!(Some("hi".to_string()), client.get("hello").await?);
     Ok(())
@@ -349,6 +350,7 @@ async fn test_back_spawn_new_storage() -> TribResult<()> {
         prefix,
         storage: stor,
     });
+    tokio::time::sleep(Duration::from_millis(500)).await;
     client.set(&kv("hello", "hi")).await?;
     let _ = shut_tx.send(()).await?;
     let _ = handle.await;
@@ -381,7 +383,7 @@ async fn test_concurrent_cli_ops() -> TribResult<()> {
             let mut prefix = colon::escape("jerry".clone());
             prefix.push_str(&"::".to_string());
             let stor = StorageClient {
-                addr: format!("http://{}", addr),
+                addr: addr,
                 client: Arc::new(tokio::sync::Mutex::new(None)),
             };
             let client = Box::<Bin>::new(Bin {

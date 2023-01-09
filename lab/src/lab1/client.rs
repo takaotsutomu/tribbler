@@ -5,7 +5,7 @@ use tonic::transport::Channel;
 
 use tribbler::err::TribResult;
 use tribbler::rpc::{
-    trib_storage_client::TribStorageClient, 
+    trib_storage_client::TribStorageClient,
     Clock as RpcClock,
     Key as RpcKey,
     KeyValue as RpcKeyValue,
@@ -14,8 +14,8 @@ use tribbler::rpc::{
 use tribbler::storage::{KeyList, KeyString, KeyValue, List, Pattern, Storage};
 
 pub struct StorageClient {
-    pub(crate) addr: String,
-    pub(crate) client: Arc<Mutex<Option<TribStorageClient<Channel>>>>,
+    pub addr: String,
+    pub client: Arc<Mutex<Option<TribStorageClient<Channel>>>>,
 }
 
 #[async_trait]

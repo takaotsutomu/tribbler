@@ -76,9 +76,9 @@ impl PartialEq for SortableTrib {
     }
 }
 
-pub(crate) struct FrontServer {
-    pub(crate) bin_storage: Box<dyn BinStorage>,
-    pub(crate) users_cache: Mutex<Vec<String>>,
+pub struct FrontServer {
+    pub bin_storage: Box<dyn BinStorage>,
+    pub users_cache: Mutex<Vec<String>>,
 }
 
 #[async_trait]
@@ -262,7 +262,7 @@ impl Server for FrontServer {
         }
         let bin = self.bin_storage.bin(BIN_USER_BASE).await?;
         let sgdup_users = bin.list_get(KEY_USERS).await?.0;
-        if !sgdup_users.contains(&who.to_string()) 
+        if !sgdup_users.contains(&who.to_string())
             || !sgdup_users.contains(&whom.to_string()) {
             return Err(Box::new(TribblerError::UserDoesNotExist(who.to_string())));
         }

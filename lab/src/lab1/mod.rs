@@ -563,7 +563,7 @@
 //!
 //! ## Happy Lab 1!
 //!
-mod client;
+pub mod client;
 mod lab;
 mod server;
 pub use crate::lab1::lab::new_client;
