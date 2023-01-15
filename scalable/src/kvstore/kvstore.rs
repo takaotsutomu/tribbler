@@ -3,13 +3,11 @@ use std::{error::Error, sync::Arc};
 use tonic::transport::Server;
 
 use tribbler::{
-    config::BackConfig,
-    err::TribResult,
-    rpc::trib_storage_server::TribStorageServer,
+    config::BackConfig, err::TribResult, rpc::trib_storage_server::TribStorageServer,
     storage::Storage,
 };
 
-use crate::lab1::{client::StorageClient, server::StorageServer};
+use crate::kvstore::{client::StorageClient, server::StorageServer};
 
 /// an async function which blocks indefinitely until interrupted serving on
 /// the host and port specified in the [BackConfig] parameter.
@@ -71,11 +69,7 @@ pub async fn serve_back(config: BackConfig) -> TribResult<()> {
             }
         }
         None => {
-            if let Err(error) = Server::builder()
-                .add_service(kvserver)
-                .serve(addr)
-                .await 
-            {
+            if let Err(error) = Server::builder().add_service(kvserver).serve(addr).await {
                 if let Some(tx) = config.ready {
                     if let Err(error) = tx.send(false) {
                         return Err(Box::new(error));

@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-lab = { path = "../lab" }
+scalable = { path = "../scalable" }
 tribbler = { path = "../tribbler" }
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
 clap = { version = "3.1", features = ["derive"] }

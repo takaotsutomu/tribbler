@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use lab::{lab1, lab2};
+use scalable::{self, kvstore};
 use log::{error, info, warn, LevelFilter};
 use tokio::join;
 use tribbler::{addr, config::Config, err::TribResult, storage::MemStorage};
@@ -88,12 +88,12 @@ async fn run_srv(t: ProcessType, idx: usize, config: Arc<Config>, tx: Option<Sen
         ProcessType::Back => {
             let cfg = config.back_config(idx, Box::new(MemStorage::default()), tx, None);
             info!("starting backend on {}", cfg.addr);
-            lab1::serve_back(cfg).await;
+            kvstore::serve_back(cfg).await;
         }
         ProcessType::Keep => {
             let cfg = config.keeper_config(idx, tx, None).unwrap();
             info!("starting keeper on {}", cfg.addr());
-            lab2::serve_keeper(cfg).await;
+            scalable::serve_keeper(cfg).await;
         }
     };
 }

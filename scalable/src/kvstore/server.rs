@@ -2,15 +2,9 @@ use async_trait::async_trait;
 use tonic;
 
 use tribbler::rpc::{
-    trib_storage_server::TribStorage, 
-    Bool as RpcBool,
-    Clock as RpcClock,
-    Key as RpcKey,
-    KeyValue as RpcKeyValue,
-    ListRemoveResponse as RpcListRemoveResponse,
-    Pattern as RpcPattern,
-    StringList as RpcStringList,
-    Value as RpcValue,
+    trib_storage_server::TribStorage, Bool as RpcBool, Clock as RpcClock, Key as RpcKey,
+    KeyValue as RpcKeyValue, ListRemoveResponse as RpcListRemoveResponse, Pattern as RpcPattern,
+    StringList as RpcStringList, Value as RpcValue,
 };
 use tribbler::storage::{KeyValue, List, Pattern, Storage};
 

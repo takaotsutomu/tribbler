@@ -8,8 +8,8 @@ use tribbler::{
     trib::Server,
 };
 
-use crate::lab1::client::StorageClient;
-use crate::lab2::{binstorage::BinStorageClient, frontserver::FrontServer};
+use crate::kvstore::client::StorageClient;
+use crate::{binstorage::BinStorageClient, frontserver::FrontServer};
 
 /// This function accepts a list of backend addresses, and returns a
 /// type which should implement the [BinStorage] trait to access the

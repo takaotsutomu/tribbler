@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use lab::{self, lab1::{self, client::StorageClient}, lab2::binstorage::Bin};
+use scalable::{self, kvstore};
 use log::LevelFilter;
 use tokio::{sync::mpsc::Sender as MpscSender, task::JoinHandle};
 
@@ -15,7 +15,6 @@ use tribbler::addr::rand::rand_port;
 #[allow(unused_imports)]
 use tribbler::{
     self,
-    colon,
     config::BackConfig,
     err::{TribResult, TribblerError},
     storage::{KeyList, KeyString, KeyValue, MemStorage, Pattern, Storage},
@@ -55,23 +54,12 @@ async fn setup(
             "back failed to start".to_string(),
         )));
     }
-    let name = "jerry".to_string();
-    let mut prefix = colon::escape("jerry".clone());
-    prefix.push_str(&"::".to_string());
-    let stor = StorageClient {
-        addr: format!("http://{}", addr),
-        client: Arc::new(tokio::sync::Mutex::new(None)),
-    };
-    let client = Box::<Bin>::new(Bin {
-        _name: name,
-        prefix,
-        storage: stor,
-    });
+    let client = kvstore::new_client(format!("http://{}", addr).as_str()).await?;
     Ok((client, handle, shut_tx.clone()))
 }
 
 fn spawn_back(cfg: BackConfig) -> tokio::task::JoinHandle<TribResult<()>> {
-    tokio::spawn(lab1::serve_back(cfg))
+    tokio::spawn(kvstore::serve_back(cfg))
 }
 
 fn kv(key: &str, value: &str) -> KeyValue {
@@ -91,7 +79,6 @@ fn pat(prefix: &str, suffix: &str) -> Pattern {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_get_set() -> TribResult<()> {
     let (client, _handle, _tx) = setup(None, None).await?;
-    tokio::time::sleep(Duration::from_millis(500)).await;
     assert_eq!(None, client.get("").await?);
     assert_eq!(None, client.get("hello").await?);
     Ok(())
@@ -100,7 +87,6 @@ async fn test_get_set() -> TribResult<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_get_set_overwrite() -> TribResult<()> {
     let (client, _handle, _tx) = setup(None, None).await?;
-    tokio::time::sleep(Duration::from_millis(500)).await;
     client.set(&kv("h8liu", "run")).await?;
     assert_eq!(Some("run".to_string()), client.get("h8liu").await?);
     client.set(&kv("h8liu", "Run")).await?;
@@ -111,7 +97,6 @@ async fn test_get_set_overwrite() -> TribResult<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_set_none() -> TribResult<()> {
     let (client, _handle, _shut) = setup(None, None).await?;
-    tokio::time::sleep(Duration::from_millis(500)).await;
     client.set(&kv("h8liu", "")).await?;
     assert_eq!(None, client.get("h8liu").await?);
     client.set(&kv("h8liu", "k")).await?;
@@ -124,7 +109,6 @@ async fn test_set_none() -> TribResult<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_keys() -> TribResult<()> {
     let (client, _handle, _tx) = setup(None, None).await?;
-    tokio::time::sleep(Duration::from_millis(500)).await;
     let _ = client.set(&kv("h8liu", "1")).await?;
     let _ = client.set(&kv("h8he", "2")).await?;
     let keys = client.keys(&pat("h8", "")).await?;
@@ -139,7 +123,6 @@ async fn test_keys() -> TribResult<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_list() -> TribResult<()> {
     let (client, _handle, _shut) = setup(None, None).await?;
-    tokio::time::sleep(Duration::from_millis(500)).await;
     client.list_append(&kv("lst", "a")).await?;
     let l = client.list_get("lst").await?.0;
     assert_eq!(1, l.len());
@@ -174,7 +157,6 @@ async fn test_list() -> TribResult<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_list_keys() -> TribResult<()> {
     let (client, _srv, _shut) = setup(None, None).await?;
-    tokio::time::sleep(Duration::from_millis(500)).await;
     let _ = client.list_append(&kv("t1", "v1")).await?;
     let _ = client.list_append(&kv("t2", "v2")).await?;
     let r = client.list_keys(&pat("", "")).await?.0;
@@ -208,7 +190,6 @@ async fn test_bad_address() -> TribResult<()> {
             panic!("server should not have sent true ready signal");
         }
     };
-    tokio::time::sleep(Duration::from_millis(500)).await;
     let r = handle.await;
     assert!(r?.is_err());
     Ok(())
@@ -230,20 +211,8 @@ async fn test_store_before_serve() -> TribResult<()> {
     if !ready {
         panic!("failed to start")
     }
-    let name = "jerry".to_string();
-    let mut prefix = colon::escape("jerry".clone());
-    prefix.push_str(&"::".to_string());
-    let stor = StorageClient {
-        addr: format!("http://{}", DEFAULT_HOST),
-        client: Arc::new(tokio::sync::Mutex::new(None)),
-    };
-    let client = Box::<Bin>::new(Bin {
-        _name: name,
-        prefix,
-        storage: stor,
-    });
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    assert_ne!(Some("hi".to_string()), client.get("hello").await?);
+    let client = kvstore::new_client(format!("http://{}", DEFAULT_HOST).as_str()).await?;
+    assert_eq!(Some("hi".to_string()), client.get("hello").await?);
     Ok(())
 }
 
@@ -275,7 +244,6 @@ async fn test_multi_serve() -> TribResult<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_clock() -> TribResult<()> {
     let (client, _srv, _shut) = setup(None, None).await?;
-    tokio::time::sleep(Duration::from_millis(500)).await;
     assert_eq!(2999, client.clock(2999).await?);
     assert_eq!(3000, client.clock(0).await?);
     assert_eq!(3001, client.clock(2999).await?);
@@ -306,20 +274,8 @@ async fn test_spawn_same_addr() -> TribResult<()> {
     };
     let _ = spawn_back(cfg);
     assert_eq!(true, rx.recv_timeout(Duration::from_secs(2))?);
-    
-    let name = "jerry".to_string();
-    let mut prefix = colon::escape("jerry".clone());
-    prefix.push_str(&"::".to_string());
-    let stor = StorageClient {
-        addr: format!("http://{}", addr.clone()),
-        client: Arc::new(tokio::sync::Mutex::new(None)),
-    };
-    let client = Box::<Bin>::new(Bin {
-        _name: name,
-        prefix,
-        storage: stor,
-    });
-    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let client = kvstore::new_client(format!("http://{}", addr.clone()).as_str()).await?;
     client.set(&kv("hello", "hi")).await?;
     assert_eq!(Some("hi".to_string()), client.get("hello").await?);
     Ok(())
@@ -338,19 +294,7 @@ async fn test_back_spawn_new_storage() -> TribResult<()> {
     };
     let handle = spawn_back(cfg);
     assert_eq!(true, rx.recv_timeout(Duration::from_secs(2))?);
-    let name = "jerry".to_string();
-    let mut prefix = colon::escape("jerry".clone());
-    prefix.push_str(&"::".to_string());
-    let stor = StorageClient {
-        addr: format!("http://{}", host),
-        client: Arc::new(tokio::sync::Mutex::new(None)),
-    };
-    let client = Box::<Bin>::new(Bin {
-        _name: name,
-        prefix,
-        storage: stor,
-    });
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    let client = kvstore::new_client(format!("http://{}", host).as_mut()).await?;
     client.set(&kv("hello", "hi")).await?;
     let _ = shut_tx.send(()).await?;
     let _ = handle.await;
@@ -364,7 +308,6 @@ async fn test_back_spawn_new_storage() -> TribResult<()> {
     };
     let _ = spawn_back(cfg);
     assert_eq!(true, rx.recv_timeout(Duration::from_secs(2))?);
-    tokio::time::sleep(Duration::from_millis(500)).await;
     assert_eq!(None, client.get("hello").await?);
     let _ = shut_tx.send(()).await;
     Ok(())
@@ -373,24 +316,15 @@ async fn test_back_spawn_new_storage() -> TribResult<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_concurrent_cli_ops() -> TribResult<()> {
     let (client, _srv, _shut) = setup(None, None).await?;
-    tokio::time::sleep(Duration::from_millis(500)).await;
     let client = Arc::new(client);
     let mut handles = vec![];
     for _ in 0..5 {
         let addr = format!("http://{}", DEFAULT_HOST);
         let jh = tokio::spawn(async move {
-            let name = "jerry".to_string();
-            let mut prefix = colon::escape("jerry".clone());
-            prefix.push_str(&"::".to_string());
-            let stor = StorageClient {
-                addr: addr,
-                client: Arc::new(tokio::sync::Mutex::new(None)),
+            let client = match kvstore::new_client(&addr).await {
+                Ok(c) => c,
+                Err(e) => return Err(TribblerError::Unknown(e.to_string())),
             };
-            let client = Box::<Bin>::new(Bin {
-                _name: name,
-                prefix,
-                storage: stor,
-            });
             for _ in 0..10 {
                 if let Err(e) = client.list_append(&kv("lst", "item")).await {
                     return Err(TribblerError::Unknown(e.to_string()));
@@ -411,7 +345,6 @@ async fn test_concurrent_cli_ops() -> TribResult<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_shutdown() -> TribResult<()> {
     let (client, srv, shutdown) = setup(None, None).await?;
-    tokio::time::sleep(Duration::from_millis(500)).await;
     assert!(client.set(&kv("hello", "hi")).await?);
     let _ = shutdown.send(()).await;
     let r = srv.await.unwrap();

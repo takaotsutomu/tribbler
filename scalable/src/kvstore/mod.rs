@@ -15,7 +15,7 @@
 //!    to the server.
 //!
 //! More specifically, you need to implement two entry functions that are
-//! defined in the `lab/src/lab1/lab.rs` file: [serve_back] and [new_client].
+//! defined in the `lab/src/kvstore/lab.rs` file: [serve_back] and [new_client].
 //! Presently, they are both implemented with [todo!].
 //!
 //! ## Get Your Repo
@@ -67,7 +67,7 @@
 //! ```
 //!
 //! Setting up your VM is the same as setting up any other linux enviornment.
-//! You will want to get your lab1 repository first. This will require you to
+//! You will want to get your kvstore repository first. This will require you to
 //! install git
 //!
 //! ```console
@@ -329,13 +329,13 @@
 //! specification, matches the interfaces, and passes the tests, here are some
 //! suggested first steps.
 //!
-//! First, create a `client.rs` file under the [crate::lab1] module, declare a
+//! First, create a `client.rs` file under the [crate::kvstore] module, declare a
 //! new struct called `StorageClient`, and make it visible to your lab 1 module:
 //!
 //! ```rust
-//! // ... in lab/src/lab1/client.rs
+//! // ... in lab/src/kvstore/client.rs
 //! pub struct StorageClient;
-//! // ... in lab/src/lab1/mod.rs
+//! // ... in lab/src/kvstore/mod.rs
 //! mod client;
 //! ```
 //!
@@ -363,7 +363,7 @@
 //! [new_client] function should look something like this:
 //!
 //! ```rust
-//! use crate::lab1::client::StorageClient;
+//! use crate::kvstore::client::StorageClient;
 //! pub async fn new_client(addr: &str) -> TribResult<Box<dyn Storage>> {
 //!     Ok(Box::new(StorageClient { }))
 //! }
@@ -440,7 +440,7 @@
 //! your service. The `shutdown` signal also needs to be handled similarly.
 //!
 //! When all of these changes are done, you should pass the test cases written
-//! in the `lab1_test.rs` file. It performs some basic checks to see if an RPC
+//! in the `kvstore_test.rs` file. It performs some basic checks to see if an RPC
 //! client and a server (that runs on the same host) will satisfy the
 //! specification of a key-value pair service (as a local
 //! [tribbler::storage::Storage] does without RPC).
@@ -564,7 +564,7 @@
 //! ## Happy Lab 1!
 //!
 pub mod client;
-mod lab;
+mod kvstore;
 mod server;
-pub use crate::lab1::lab::new_client;
-pub use crate::lab1::lab::serve_back;
+pub use crate::kvstore::kvstore::new_client;
+pub use crate::kvstore::kvstore::serve_back;

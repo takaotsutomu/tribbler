@@ -3,7 +3,7 @@ use std::str::FromStr;
 use actix_files::Files;
 use actix_web::{web, App, HttpServer};
 use clap::Parser;
-use lab::lab2;
+use scalable;
 use log::{info, warn, LevelFilter};
 use tribbler::config::Config;
 use tribbler::config::DEFAULT_CONFIG_LOCATION;
@@ -16,7 +16,7 @@ type Srv = Box<dyn Server + Send + Sync>;
 #[derive(Debug, Clone)]
 enum ServerType {
     Ref,
-    Lab,
+    Scalable,
 }
 
 impl FromStr for ServerType {
@@ -25,7 +25,7 @@ impl FromStr for ServerType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "ref" => Ok(ServerType::Ref),
-            "lab" => Ok(ServerType::Lab),
+            "scalable" => Ok(ServerType::Scalable),
             _ => Err(TribblerError::Unknown(format!(
                 "{} not a valid ServerType",
                 s
@@ -68,10 +68,10 @@ async fn main() -> TribResult<()> {
         .init();
     let srv_impl: Srv = match args.server_type {
         ServerType::Ref => Box::new(RefServer::new()),
-        ServerType::Lab => {
+        ServerType::Scalable => {
             let cfg = Config::read(Some(&args.config))?;
-            let bc = lab2::new_bin_client(cfg.backs).await?;
-            lab2::new_front(bc).await?
+            let bc = scalable::new_bin_client(cfg.backs).await?;
+            scalable::new_front(bc).await?
         }
     };
     let server: web::Data<Srv> = web::Data::new(srv_impl);

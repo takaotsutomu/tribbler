@@ -261,7 +261,7 @@
 //! pub async fn new_bin_client(backs: Vec<String>) -> TribResult<Box<dyn BinStorage>>
 //! ```
 //!
-//! This function is similar to [crate::lab1::new_client] but instead returns a
+//! This function is similar to [crate::kvstore::new_client] but instead returns a
 //! type implementing the [tribbler::storage::BinStorage] trait.
 //! [BinStorage](tribbler::storage::BinStorage) has only one function called
 //! `bin()`, which takes a bin name and returns a
@@ -283,7 +283,7 @@
 //! pub async fn serve_keeper(kc: KeeperConfig) -> TribResult<()>
 //! ```
 //!
-//! This function is a blocking function, similar to [crate::lab1::serve_back].
+//! This function is a blocking function, similar to [crate::kvstore::serve_back].
 //! It will spawn a keeper instance that maintains the back-ends in a bin store
 //! in consistent state. For Lab 2, there will be only one keeper and the keeper
 //! won't have a lot to do. In Lab 3 we'll be adding fault tolerance. Then,
@@ -589,9 +589,9 @@
 //!
 //! ## Happy Lab 2!
 //!
-mod binstorage;
+pub mod binstorage;
 mod frontserver;
-mod lab;
-pub use crate::lab2::lab::new_bin_client;
-pub use crate::lab2::lab::new_front;
-pub use crate::lab2::lab::serve_keeper;
+mod scalable;
+pub use crate::scalable::new_bin_client;
+pub use crate::scalable::new_front;
+pub use crate::scalable::serve_keeper;

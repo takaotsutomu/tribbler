@@ -7,7 +7,7 @@ use tribbler::{
     storage::{BinStorage, KeyList, KeyString, KeyValue, List, Pattern, Storage},
 };
 
-use crate::lab1::client::StorageClient;
+use crate::kvstore::client::StorageClient;
 
 pub struct BinStorageClient {
     // Addresses of the backend servers

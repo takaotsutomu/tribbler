@@ -1,7 +1,7 @@
 //! function which runs a kv-server using the [serve_back] function
 //! implementation
 use clap::Parser;
-use lab::lab1::serve_back;
+use scalable::kvstore::serve_back;
 use log::{info, LevelFilter};
 use tribbler::{config::BackConfig, err::TribResult};
 

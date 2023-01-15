@@ -1,6 +1,6 @@
 use clap::{Command, Parser};
 use cmd::client_cmds::{app_commands, match_storage_cmds, repl};
-use lab::lab1::new_client;
+use scalable::kvstore::new_client;
 use tribbler::err::TribResult;
 #[allow(unused_imports)]
 use tribbler::storage::{KeyList, KeyString, KeyValue, Pattern};

@@ -1,6 +1,6 @@
 use clap::{Arg, ArgMatches, Command, Parser};
 use cmd::client_cmds::{app_commands, match_storage_cmds, print_result, repl};
-use lab::lab2;
+use scalable;
 use log::LevelFilter;
 use tribbler::{
     config::{Config, DEFAULT_CONFIG_LOCATION},
@@ -29,7 +29,7 @@ async fn main() -> TribResult<()> {
     env_logger::builder().filter_level(args.log).init();
     let cfg = Config::read(Some(&args.config))?;
     let addrs = cfg.backs;
-    let bc = lab2::new_bin_client(addrs).await?;
+    let bc = scalable::new_bin_client(addrs).await?;
     let app = Command::new("bin-client")
         .subcommands(app_commands())
         .subcommands(bin_cmd());

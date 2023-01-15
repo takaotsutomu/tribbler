@@ -280,7 +280,11 @@
 #![doc(
     html_favicon_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f8/Creative-Tail-Animal-penguin.svg/128px-Creative-Tail-Animal-penguin.svg.png?20160314145218"
 )]
+pub mod binstorage;
+mod frontserver;
 mod keeper;
-pub mod lab1;
-pub mod lab2;
-pub mod lab3;
+pub mod kvstore;
+mod scalable;
+pub use crate::scalable::new_bin_client;
+pub use crate::scalable::new_front;
+pub use crate::scalable::serve_keeper;
