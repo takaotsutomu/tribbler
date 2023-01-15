@@ -1,3 +1,0 @@
-cargo:rerun-if-changed=build/main.rs
-cargo:rustc-env=TYPENUM_BUILD_CONSTS=/Users/ttsuto/Desktop/github/distrib-blog-svc/target/debug/build/typenum-6914acc21e98b875/out/consts.rs
-cargo:rustc-env=TYPENUM_BUILD_OP=/Users/ttsuto/Desktop/github/distrib-blog-svc/target/debug/build/typenum-6914acc21e98b875/out/op.rs
