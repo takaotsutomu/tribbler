@@ -1241,6 +1241,7 @@ name = "scalable"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "byteorder",
  "env_logger",
  "log",
  "prost",

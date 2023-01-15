@@ -285,6 +285,7 @@ mod frontserver;
 mod keeper;
 pub mod kvstore;
 mod scalable;
+mod zookeeper;
 pub use crate::scalable::new_bin_client;
 pub use crate::scalable::new_front;
 pub use crate::scalable::serve_keeper;
