@@ -11,6 +11,7 @@ use tribbler::{
 pub mod binstorage;
 mod frontserver;
 pub mod kvstore;
+mod zookeeper;
 
 use binstorage::BinStorageClient;
 use frontserver::FrontServer;

@@ -1,4 +1,8 @@
+use byteorder::{BigEndian, WriteBytesExt};
+
+#[derive(Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(i32)]
+#[allow(dead_code)]
 pub(super) enum OpCode {
     Notification = 0,
     Create = 1,
@@ -32,10 +36,42 @@ pub(super) enum OpCode {
     WhoAmI = 107,
     CreateSession = -10,
     CloseSession = -11,
-    Connect = -100,
     Error = -1,
 }
 
+pub trait WriteTo {
+    fn write_to(&self, writer: &mut dyn Write) -> io::Result<()>;
+}
+
+impl WriteTo for u8 {
+    fn write_to(&self, writer: &mut dyn Write) -> io::Result<()> {
+        try!(writer.write_u8(*self));
+        Ok(())
+    }
+}
+
+impl WriteTo for str {
+    fn write_to(&self, writer: &mut dyn Write) -> io::Result<()> {
+        try!(writer.write_i32::<BigEndian>(self.len() as i32));
+        writer.write_all(self.as_ref())
+    }
+}
+
+impl<T: WriteTo> WriteTo for [T] {
+    fn write_to(&self, writer: &mut dyn Write) -> io::Result<()> {
+        try!(writer.write_i32::<BigEndian>(self.len() as i32));
+        let mut res = Ok(());
+        for elem in self.iter() {
+            res = elem.write_to(writer);
+            if res.is_err() {
+                return res;
+            }
+        }
+        res
+    }
+}
+
+#[derive(Debug)]
 pub(crate) enum Request {
     Connect {
         protocol_version: i32,
@@ -45,6 +81,12 @@ pub(crate) enum Request {
         passwd: Vec<u8>,
         read_only: bool,
     },
+    Create {
+        path: String,
+        data: Vec<u8>,
+        acl: Vec<u8>,
+        flags: i32,
+    }
 }
 
 impl Request {
@@ -65,14 +107,27 @@ impl Request {
                 writer.write_i32::<BigEndian>(passwd.len() as i32)?;
                 writer.write_all(passwd)?;
                 writer.write_u8(read_only as u8);
-                Ok(())
             }
+            Request::Create {
+                ref path,
+                ref data, 
+                ref acl, 
+                flags,
+            } => {
+                path.write_to(buffer)?;
+                data.write_to(buffer)?;
+                acl.write_to(buffer)?;
+                buffer.write_i32::<BigEndian>(flags)?;
+            },
         }
+        Ok(()) 
     }
 
     pub(super) fn opcode(&self) -> super::OpCode {
         match *self {
-            Request::Connect => OpCode::Connect,
+            Request::Connect {..} => OpCode::CreateSession,
+            Request::Create {..} => OpCode::Create,
+            _ => unimplemented!()
         }
     }
 }
