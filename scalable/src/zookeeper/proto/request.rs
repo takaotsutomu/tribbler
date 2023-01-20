@@ -1,4 +1,35 @@
 use byteorder::{BigEndian, WriteBytesExt};
+use std::{io::{self, Write}, borrow::Cow};
+use CreateMode;
+
+
+use crate::zookeeper::error::Delete;
+
+#[derive(Debug)]
+pub(crate) enum Request {
+    Connect {
+        protocol_version: i32,
+        last_zxid_seen: i64,
+        timeout: i32,
+        session_id: i64,
+        passwd: Vec<u8>,
+        read_only: bool,
+    },
+    Exists {
+        path: String,
+        watch: u8,
+    },
+    Delete {
+        path: String,
+        version: i32,
+    },
+    Create {
+        path: String,
+        data: Cow<'static, [u8]>,
+        acl: Cow<'static, [Acl]>,
+        mode: CreateMode,
+    },
+}
 
 #[derive(Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(i32)]
@@ -40,94 +71,101 @@ pub(super) enum OpCode {
 }
 
 pub trait WriteTo {
-    fn write_to(&self, writer: &mut dyn Write) -> io::Result<()>;
+    fn write_to<W: Write>(&self, writer: W) -> io::Result<()>;
 }
 
+impl WriteTo for Acl {
+    fn write_to<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        writer.write_u32::<BigEndian>(self.perms.code())?;
+        self.scheme.write_to(&mut writer)?;
+        self.id.write_to(writer)
+    }
+} 
+
 impl WriteTo for u8 {
-    fn write_to(&self, writer: &mut dyn Write) -> io::Result<()> {
+    fn write_to<W: Write>(&self, mut writer: W) -> io::Result<()> {
         try!(writer.write_u8(*self));
         Ok(())
     }
 }
 
 impl WriteTo for str {
-    fn write_to(&self, writer: &mut dyn Write) -> io::Result<()> {
+    fn write_to<W: Write>(&self, mut writer: W) -> io::Result<()> {
         try!(writer.write_i32::<BigEndian>(self.len() as i32));
         writer.write_all(self.as_ref())
     }
 }
 
-impl<T: WriteTo> WriteTo for [T] {
-    fn write_to(&self, writer: &mut dyn Write) -> io::Result<()> {
+impl WriteTo for [u8] {
+    fn write_to<W: Write>(&self, mut writer: W) -> io::Result<()> {
         try!(writer.write_i32::<BigEndian>(self.len() as i32));
-        let mut res = Ok(());
-        for elem in self.iter() {
-            res = elem.write_to(writer);
-            if res.is_err() {
-                return res;
-            }
-        }
-        res
+        writer.write_all(self.as_ref())
     }
 }
 
-#[derive(Debug)]
-pub(crate) enum Request {
-    Connect {
-        protocol_version: i32,
-        last_zxid_seen: i64,
-        timeout: i32,
-        session_id: i64,
-        passwd: Vec<u8>,
-        read_only: bool,
-    },
-    Create {
-        path: String,
-        data: Vec<u8>,
-        acl: Vec<u8>,
-        flags: i32,
+// Series 2 around 1:37
+fn write_list<W, T>(mut writer: W, ts: &[T]) -> io::Result<()>
+where
+    T: WriteTo,
+    W: Write,
+{
+    writer.write_i32::<BigEndian>(ts.len() as i32)?;
+    for elem in ts {
+        elem.write_to(&mut writer)?;
     }
+    Ok(())
 }
 
 impl Request {
     pub(super) fn serialize_into(&self, buffer: &mut Vec<u8>) -> Result<(), io::Error> {
         match *self {
-            Request::Connect { 
+            Request::Connect {
                 protocol_version,
                 last_zxid_seen,
                 timeout,
                 session_id,
-                passwd,
+                ref passwd,
                 read_only,
             } => {
-                writer.write_i32::<BigEndian>(protocol_version)?;
-                writer.write_i64::<BigEndian>(last_zxid_seen)?;
-                writer.write_i32::<BigEndian>(timeout)?;
-                writer.write_i64::<BigEndian>(session_id)?;
-                writer.write_i32::<BigEndian>(passwd.len() as i32)?;
-                writer.write_all(passwd)?;
-                writer.write_u8(read_only as u8);
+                buffer.write_i32::<BigEndian>(protocol_version)?;
+                buffer.write_i64::<BigEndian>(last_zxid_seen)?;
+                buffer.write_i32::<BigEndian>(timeout)?;
+                buffer.write_i64::<BigEndian>(session_id)?;
+                buffer.write_i32::<BigEndian>(passwd.len() as i32)?;
+                buffer.write_all(passwd)?;
+                buffer.write_u8(read_only as u8)?;
+            }
+            Request::Exists { ref path, watch } => {
+                buffer.write_i32::<BigEndian>(OpCode::Exists as i32)?;
+                path.write_to(buffer)?;
+                buffer.write_u8(watch)?;
+            }
+            Request::Delete { ref path, version } => {
+                buffer.write_i32::<BigEndian>(OpCode::Delete as i32)?;
+                buffer.write_i32::<BigEndian>(version)?;
             }
             Request::Create {
                 ref path,
-                ref data, 
-                ref acl, 
-                flags,
+                ref data,
+                mode,
+                ref acl,
             } => {
-                path.write_to(buffer)?;
-                data.write_to(buffer)?;
-                acl.write_to(buffer)?;
-                buffer.write_i32::<BigEndian>(flags)?;
-            },
+                buffer.write_i32::<BigEndian>(OpCode::Create as i32)?;
+                path.write_to(&mut *buffer)?; // &mut *buffer creates new borrow to make the compiler happy, essentially op
+                data.write_to(&mut *buffer)?;
+                write_list(&mut *buffer, acl)?;
+                buffer.write_i32::<BigEndian>(mode as i32)?;
+            }
         }
-        Ok(()) 
+        Ok(())
     }
 
-    pub(super) fn opcode(&self) -> super::OpCode {
+    pub(super) fn opcode(&self) -> OpCode {
         match *self {
-            Request::Connect {..} => OpCode::CreateSession,
-            Request::Create {..} => OpCode::Create,
-            _ => unimplemented!()
+            Request::Connect { .. } => OpCode::CreateSession,
+            Request::Exists { .. } => OpCode::Exists,
+            Request::Delete { .. } => OpCode::Delete,
+            Request::Create { .. } => OpCode::Create,
         }
     }
 }

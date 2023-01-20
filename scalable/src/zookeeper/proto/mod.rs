@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time};
 
 use byteorder::{WriteBytesExt, BigEndian, ReadBytesExt};
 use failure;
@@ -8,16 +8,23 @@ use tokio;
 
 mod request;
 mod response;
+mod error;
 
 pub(crate) use request::Request;
 pub(crate) use response::Response;
+pub(crate) use error::ZkError;
 
-pub(crate) struct Enqueuer(mpsc::UnboundedSender<(Request, oneshot::Sender<Response>)>);
+pub(crate) struct Enqueuer(
+    mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response, ZkError>>)>
+);
 
 impl Enqueuer {
     // TODO: maybe:
     // fn enqueue<Req, Res>(&slef, req; Req) 0> impl Furutre(Item = Res) where Req: Returns
-    pub(crate) fn enqueue(&self, req: Resuest) -> impl Future<Item = Response, Error = failure::Error> {
+    pub(crate) fn enqueue(
+        &self,
+        req: Resuest
+    ) -> impl Future<Item = Result<Response, ZkError>, Error = failure::Error> {
         let(tx, rx) = oneshot::channel();
         match self.0
             .unbounded_send((req, tx))
@@ -35,28 +42,33 @@ impl Enqueuer {
 pub(crate) struct Packetizer<S> {
     stream: S,
 
-    // Bytes that has not yet be set.
+    /// Heartbeat timer,
+    timer: tokio::timer::Delay,
+    timeout: time::Duration,
+
+    /// Bytes that has not yet be set.
     outbox: Vec<u8>,
 
-    // Prefix of outbox that has been sent.
+    /// Prefix of outbox that has been sent.
     outstart: usize,
 
-    // Bytes that has not yet be deserialized.
+    /// Bytes that has not yet be deserialized.
     inbox: Vec<u8>,
 
-    // Prefix of inbox that has been sent.
+    /// Prefix of inbox that has been sent.
     instart: usize,
 
-    // Operation we are waiting a response for.
-    reply: HashMap<i32, (request::OpCode, oneshot::Sender<Response>)>,
+    /// Operation we are waiting a response for.
+    reply: HashMap<i32, (request::OpCode, oneshot::Sender<Result<Response, ZkError>>)>,
 
-    // Next xid to issue.
+    /// Next xid to issue.
     xid: i32,
 
-    // Incomming requests.
-    rx: mpsc::UnboundedReceiver<(Request, oneshot::Sender<Response>)>,
+    /// Incomming requests.
+    rx: mpsc::UnboundedReceiver<(Request, oneshot::Sender<Result<Response, ZkError>>)>,
 
     exiting: bool,
+    first: bool,
 }
 
 impl<S> Packetizer<S> {
@@ -69,6 +81,10 @@ impl<S> Packetizer<S> {
 
         tokio::spawn(Packetizer {
             stream,
+            timer: tokio::timer::Delay::new(
+                time::Instant::now() + time::Duration::from_secs(86_400),
+            ),
+            timeout: time::Duration::new(0, 0),
             outbox: Vec::new(),
             outstart: 0,
             inbox: Vec::new(),
@@ -77,6 +93,7 @@ impl<S> Packetizer<S> {
             xid: 0,
             rx,
             exiting: false,
+            first: true,
         }).map_err(|e| {
             // TODO: expose this error to the user somehow
             eprintln!("packetizer exiting: {:?}", e);
@@ -112,8 +129,8 @@ impl<S> Packetizer<S> {
 
             let xid = self.xid;
             self.xid += 1;
-            self.reply.insert(xid, (item.opcode(), tx));
-            self.last_sent.push_back(item.opcode());
+            let old = self.reply.insert(xid, (item.opcode(), tx));
+            assert!(old.is_none());
             
             if let Request::Connect {..} = item {
             } else {
@@ -140,16 +157,20 @@ impl<S> Packetizer<S> {
     where 
         S: AsyncWrite
     {
+        let mut wrote = false;
         while self.outlen() != 0 {
-            let n = try_read!(self.stream.write(&self.outbox[self.outstart..]));
+            let n = try_ready!(self.stream.write(&self.outbox[self.outstart..]));
+            wrote = true;
             self.outstart += n;
             if self.outstart == self.outbox.outlen() {
                 self.outbox.clear();
                 self.outstart = 0;
-            } else {
-                return Ok(Async::NotReady())
             }
         }
+        if wrote {
+            self.timer.reset(time::Instant::now() + self.timeout);
+        }
+
         self.stream.poll_flush().map_err(failure::Error::from)
     }
 
@@ -165,6 +186,7 @@ impl<S> Packetizer<S> {
                 4
             };
             while self.inlen() < need {
+                eprintln!("READ MORE BYTES, have {}", self.inlen());
                 let read_from = self.inbox.len();
                 self.inbox.resize(read_from + need, 0);
                 match self.stream.poll_read(&mut self.inbox[read_from..])? {
@@ -174,7 +196,7 @@ impl<S> Packetizer<S> {
                                 bail!("connection closed with {} bytes left in buffer", self.inlen());
                             }
                             
-                            // End of stream
+                            // end of stream
                             return OK(Async::Ready(()));
                         }
                         self.inbox.truncate(read_from + n);
@@ -190,25 +212,48 @@ impl<S> Packetizer<S> {
                     }
                 }
             }
-            
+
+            eprintln!("length is {}", need - 4);
             {
+                let mut err = None;
                 let mut buf = &self.inbox[self.instart + 4..self.instart + need];
+                self.instart += need;
+
                 let xid = if self.first {
                     0
                 } else {
                     let xid = buf.read_i32::<BigEndian>()?;
                     let _zxid = buf.read_i64::<BigEndian>()?;
-                    let _err = buf.read_i32::<BigEndian>()?;
-
+                    let errcode = buf.read_i32::<BigEndian>()?;
+                    if errcode != 0 {
+                        err = Some(ZkError::from(errcode));
+                    }
+                    xid
                 };
-                self.first = false;
-                
-                // find the waiting request future
-                let (opcode, tx) = self.reply.remove(&xid); // return an error if xid is unknown
-    
-                let r = Response::parse(opcode, buf)?;
-                self.instart += need;
-                tx.send(r).is_ok(); // If the receiver doesn't care, we don't either
+                if xid == -2 {
+                    // response to heartbeat
+                } else {
+                    // response to user request
+                    self.first = false;
+                    eprintln!("{:?}", buf);
+                    
+                    // find the waiting request future
+                    let (opcode, tx) = self.reply.remove(&xid); // return an error if xid is unknown
+                    eprintln!("handling response to xid {} with opcode {:?}", xid, opcode);
+
+                    if let Some(e) = err {
+                        tx.send(Err(e)).is_ok();
+                    } else {
+                        let r = Response::parse(opcode, buf)?;
+                        if let Response::Connect { timeout, .. } = r {
+                            assert!(timeout >= 0);
+                            eprintln!("timeout is {}ms", timeout);
+                            self.timeout = time::Duration::from_millis(2 * timeout as u64 / 3);
+                            self.timer.reset(time::Instant::now() + self.timeout);
+                        }
+                        tx.send(Ok(r).is_ok()); // if the receiver doesn't care, we don't either
+                    }
+                } 
             }
 
             if self.instart == self.inbox.len() {
@@ -241,6 +286,29 @@ where S: AsyncRead + AsyncWrite
         // socekt are ready, if we only call read, we wont be woken up again to
         // write
         let r = self.poll_read()?;
+
+        if let Async::Ready(()) = self.timer.poll()? {
+            if self.outbox.is_empty() {
+                // send a ping!
+                // length is known for pings
+                self.outbox
+                    .write_i32::<BigEndian>(8)
+                    .expect("Vec::write should never fail");
+                // xid
+                self.outbox
+                    .write_i32::<BigEndian>(-2)
+                    .expect("Vec::write should never fail");
+                // opcode
+                self.outbox
+                    .write_i32::<BigEndian>(request::OpCode::Ping as i32)
+                    .expect("Vec::write should never fail");
+            } else {
+                // already request in flight, so no need to also send heartbeat
+            }
+
+            self.timer.reset(time::Instant::now() + self.timeout);
+        }
+
         let w = self.poll_write()?;
         match (r,w) {
             (Async::Ready(()), Async::Ready(())) if self.exiting => {
