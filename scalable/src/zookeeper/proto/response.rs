@@ -2,7 +2,7 @@ use std::io::{self, Read};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use failure;
-use Stat;
+use {KeeperState, Stat, WatchedEvent, WatchedEventType};
 
 #[derive(Debug)]
 pub(crate) enum Response {
@@ -85,6 +85,19 @@ impl ReadFrom for Stat {
             data_length: try!(read.read_i32::<BigEndian>()),
             num_children: try!(read.read_i32::<BigEndian>()),
             pzxid: try!(read.read_i64::<BigEndian>()),
+        })
+    }
+}
+
+impl ReadFrom for WatchedEvent {
+    fn read_from<R: Read>(read: &mut R) -> io::Result<WatchedEvent> {
+        let wtype = read.read_i32::<BigEndian>()?;
+        let state = read.read_i32::<BigEndian>()?;
+        let path = read.read_string()?;
+        Ok(WatchedEvent {
+            event_type: WatchedEventType::from(wtype),
+            keeper_state: KeeperState::from(state),
+            path,
         })
     }
 }

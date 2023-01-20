@@ -6,6 +6,8 @@ use futures::{sync::{mpsc, oneshot}, future::Either}; // future sync allows mult
 use tokio::prelude::*;
 use tokio;
 
+use WatchedEvent;
+
 mod request;
 mod response;
 mod error;
@@ -58,13 +60,16 @@ pub(crate) struct Packetizer<S> {
     /// Prefix of inbox that has been sent.
     instart: usize,
 
+    /// Watcher to send watch events to.
+    default_watcher: mpsc::UnboundedSender<WatchedEvent>,
+
     /// Operation we are waiting a response for.
     reply: HashMap<i32, (request::OpCode, oneshot::Sender<Result<Response, ZkError>>)>,
 
     /// Next xid to issue.
     xid: i32,
 
-    /// Incomming requests.
+    /// Incoming requests.
     rx: mpsc::UnboundedReceiver<(Request, oneshot::Sender<Result<Response, ZkError>>)>,
 
     exiting: bool,
@@ -72,7 +77,10 @@ pub(crate) struct Packetizer<S> {
 }
 
 impl<S> Packetizer<S> {
-    pub(crate) fn new(stream: S) -> Enqueuer
+    pub(crate) fn new(
+        stream: S, 
+        default_watcher: mpsc::UnboundedSender<WatchedEvent>,
+    ) -> Enqueuer
     where 
         S: Send + 'static + AsyncRead + AsyncWrite,
     {
@@ -89,6 +97,7 @@ impl<S> Packetizer<S> {
             outstart: 0,
             inbox: Vec::new(),
             instart: 0,
+            default_watcher,
             reply: Default::default(),
             xid: 0,
             rx,
@@ -118,8 +127,8 @@ impl<S> Packetizer<S> {
             let (item, tx)  = match try_ready!(self.rx.poll()) {
                 Ok((item, tx)) => (item, tx),
                 None => return Err(())
-            }; // returns error if there are no more requests coming
-            let (tx, rx) = futures::unsync::oneshot::channel();
+            }; // return error if there are no more requests coming
+
             let lengthi = self.outbox.len();
             // dummy length
             self.outbox.push(0);
@@ -171,7 +180,14 @@ impl<S> Packetizer<S> {
             self.timer.reset(time::Instant::now() + self.timeout);
         }
 
-        self.stream.poll_flush().map_err(failure::Error::from)
+        self.stream.poll_flush().map_err(failure::Error::from)?;
+
+        if self.exiting {
+            eprintln!("shutting down writer");
+            try_ready!(self.stream.shutdown());
+        }
+
+        Ok(Async::Ready(()))
     }
 
     fn poll_read(&mut self) -> Result<Async<()>, failure::Error> 
@@ -192,8 +208,17 @@ impl<S> Packetizer<S> {
                 match self.stream.poll_read(&mut self.inbox[read_from..])? {
                     Async::Ready(n) => {
                         if n == 0 {
-                            if self.inlen() != 0 {
-                                bail!("connection closed with {} bytes left in buffer", self.inlen());
+                            let left = &self.inbox[self.instart..];
+                            if left == &[0, 0, 0, 0][..] {
+                                // server normally sends 4*0x00 at the end
+                                return Ok(Async::Ready(()));
+                            } else {
+                                eprintln!("{:x?}", &self.inbox[..]);
+                                bail!(
+                                    "connection closed with {} bytes left in buffer: {:x?}",
+                                    self.inlen(),
+                                    &self.inbox[self.instart..]
+                                );
                             }
                             
                             // end of stream
@@ -230,7 +255,21 @@ impl<S> Packetizer<S> {
                     }
                     xid
                 };
-                if xid == -2 {
+                if xid == 0 & !self.first {
+                    // response to shutdown -- empty response
+                    // XXX: in theory, server should now shut down receive end
+                    eprintln!("got response to CloseSession");
+                    if let Some(e) = err {
+                        bail!("failed to close session: {:?}", e);
+                    }
+                } else if xid == -1 {
+                    // watch event
+                    use self::response::ReadFrom;
+                    let e = WatchedEvent::read_from(&mut buf)?;
+                    // TODO: maybe send to non-default watcher
+                    // NOTE: ignoring error, because the user may not care about events
+                    let _ = self.default_watcher.unbounded_send(e);
+                } else if xid == -2 {
                     // response to heartbeat
                 } else {
                     // response to user request
@@ -277,14 +316,28 @@ where S: AsyncRead + AsyncWrite
                 Ok(_) => {},
                 Err(()) => {
                     // no more requests will be enqueued
-                    unimplemented!();
+                    self.exiting = true;
+
+                    // send CloseSession
+                    // length is fixed
+                    self.outbox
+                        .write_i32::<BigEndian>(8)
+                        .expect("Vec::write should never fail");
+                    // xid
+                    self.outbox
+                        .write_i32::<BigEndian>(0)
+                        .expect("Vec::write should never fail");
+                    // opcode
+                    self.outbox
+                        .write_i32::<BigEndian>(request::OpCode::CloseSession as i32)
+                        .expect("Vec::write should never fail");
                 },
             };
         }
         
         // Have to call both because when both read and write end of the 
-        // socekt are ready, if we only call read, we wont be woken up again to
-        // write
+        // socekt are ready. If we only call read, we won't be woken up again to
+        // write.
         let r = self.poll_read()?;
 
         if let Async::Ready(()) = self.timer.poll()? {
@@ -316,11 +369,7 @@ where S: AsyncRead + AsyncWrite
                 Ok(Async::Ready(()))
             },
             (Async::Ready(()), Async::Ready(())) => Ok(Async::NotReady(())),
-            (_, Async::Ready(())) if self.exiting => {
-                Ok(Async::NotReady)
-            }
             (Async::Ready(()), _) => bail!("outstanding requests, but response channle closed"),
-            
             _ => Ok(Async::NotReady),
         }
     }    
