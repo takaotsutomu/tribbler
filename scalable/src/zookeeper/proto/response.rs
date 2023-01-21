@@ -1,5 +1,4 @@
 use std::io::{self, Read};
-
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use failure;
 use {KeeperState, Stat, WatchedEvent, WatchedEventType};
@@ -10,7 +9,7 @@ pub(crate) enum Response {
         protocol_version: i32,
         timeout: i32,
         session_id: i64,
-        passwd: Vec<u8>,
+        password: Vec<u8>,
         read_only: bool,
     },
     Exists {
@@ -111,7 +110,7 @@ impl Response {
                     protocol_version: reader.read_i32::<BigEndian>()?,
                     timeout: reader.read_i32::<BigEndian>()?,
                     session_id: reader.read_i64::<BigEndian>()?,
-                    passwd: reader.read_buffer()?,
+                    password: reader.read_buffer()?,
                     read_only: reader.read_u8().map_or(false, |v| v != 0),
                 }),
             OpCode::Exists => Ok(Response::Exists {
